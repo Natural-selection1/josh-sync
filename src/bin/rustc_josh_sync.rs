@@ -3,7 +3,7 @@ use clap::Parser;
 use rustc_josh_sync::SyncContext;
 use rustc_josh_sync::config::{JoshConfig, load_config};
 use rustc_josh_sync::josh::{JoshProxy, try_install_josh_proxy};
-use rustc_josh_sync::sync::{DEFAULT_UPSTREAM_REPO, GitSync, RustcPullError};
+use rustc_josh_sync::sync::{DEFAULT_UPSTREAM_REPO, FilterVersion, GitSync, RustcPullError};
 use rustc_josh_sync::utils::{get_current_head_sha, prompt};
 use std::path::{Path, PathBuf};
 
@@ -90,6 +90,7 @@ fn main() -> anyhow::Result<()> {
                 filter: None,
                 post_pull: vec![],
                 subtree_filter: None,
+                filter_version: FilterVersion::latest(),
             };
             config
                 .write(Path::new(DEFAULT_CONFIG_PATH))
