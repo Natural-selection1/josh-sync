@@ -9,12 +9,12 @@ path = "library/stdarch"
 # Note that this option is mutually exclusive with `path`
 #filter = ...
 
-# Optionally, you can specify a set of commands executed after a successful pull.
-# If the executed command changes the local git state (performs some modifications to files that
-# were already tracked), then a new commit with the given message will be created.
-#[[post-pull]]
-#cmd = ["cargo", "fmt"]
-#commit-message = "reformat"
+# Optionally, you can specify the filter version, which tells josh-sync which postprocessing to
+# apply to the specified filter.
+# If not specified, it defaults to version 1.
+# Version 1 - default "legacy" behavior of Josh, which preserves empty merge commits
+# Version 2 - newer behavior that skips empty merge commits
+#filter-version = 1
 
 # Optionally, you can specify a subtree filter.
 # This will be applied to the local `HEAD` during the round-trip check.
@@ -28,3 +28,10 @@ path = "library/stdarch"
 # E.g., if the `filter` is ":/compiler/rustc_public:prefix=rustc_public",
 # the `subtree-filter` should be:
 #subtree-filter = ":/rustc_public:prefix=rustc_public"
+
+# Optionally, you can specify a set of commands executed after a successful pull.
+# If the executed command changes the local git state (performs some modifications to files that
+# were already tracked), then a new commit with the given message will be created.
+#[[post-pull]]
+#cmd = ["cargo", "fmt"]
+#commit-message = "reformat"

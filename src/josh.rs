@@ -8,7 +8,7 @@ use std::time::Duration;
 
 const JOSH_PORT: u16 = 42042;
 /// Version of `josh-proxy` that should be downloaded for the user.
-const JOSH_VERSION: &str = "r26.06.11";
+const JOSH_VERSION: &str = "r26.07.19";
 
 pub struct JoshProxy {
     path: PathBuf,
