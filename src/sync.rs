@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 pub const DEFAULT_UPSTREAM_REPO: &str = "rust-lang/rust";
 
+const NO_REBASE_WARN: &str = "Do NOT amend/squash/rebase any of the commits produced by this tool; that can badly break future syncs.";
+
 pub enum RustcPullError {
     /// No changes are available to be pulled.
     NothingToPull,
@@ -223,6 +225,7 @@ This merge was created using https://github.com/rust-lang/josh-sync.
 NOT rolling back the branch state, so you can examine it manually.
 After you fix the conflicts, `git add` the changes and run `git merge --continue`."
             );
+            eprintln!("{NO_REBASE_WARN}");
             git_reset.disarm();
             return Err(RustcPullError::PullFailed(error));
         }
@@ -245,6 +248,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         }
 
         println!("Pull finished! Current HEAD is {current_sha}");
+        println!("{NO_REBASE_WARN}");
 
         if !self.context.config.post_pull.is_empty() {
             println!("Running post-pull operation(s)");
@@ -344,6 +348,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
 
         // Do a round-trip check to make sure the push worked as expected.
         self.roundtrip_check(&self.context.config, &josh_url, &branch)?;
+        println!("{NO_REBASE_WARN}");
 
         Ok(())
     }
