@@ -22,7 +22,7 @@ impl JoshProxy {
     pub fn start(&self, config: &JoshConfig) -> anyhow::Result<RunningJoshProxy> {
         // Determine cache directory.
         let user_dirs =
-            directories::ProjectDirs::from("org", &config.full_repo_name(), "rustc-josh")
+            directories::ProjectDirs::from("org", &config.full_repo_name(), "vivoblueos-josh")
                 .context("cannot determine cache directory for Josh")?;
         let local_dir = user_dirs.cache_dir().to_owned();
 
@@ -88,7 +88,8 @@ impl JoshFilter {
 }
 
 fn josh_install_directory() -> PathBuf {
-    let Some(user_dirs) = directories::ProjectDirs::from("org", "rust-lang", "rustc-josh") else {
+    let Some(user_dirs) = directories::ProjectDirs::from("org", "vivoblueos", "vivoblueos-josh")
+    else {
         eprintln!(
             "Cannot determine user directory for Josh installation, falling back to local directory"
         );
