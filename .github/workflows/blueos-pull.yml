@@ -11,6 +11,14 @@ on:
         description: 'Username of a GitHub account that will create the sync PR. Must include [bot] at the end.'
         required: true
         type: string
+      josh-sync-repository:
+        description: 'GitHub owner/repository from which to install vivoblueos-josh-sync.'
+        required: true
+        type: string
+      josh-sync-revision:
+        description: 'Immutable commit SHA of vivoblueos-josh-sync to install.'
+        required: true
+        type: string
       branch-name:
         description: 'Name of the branch to create for the sync'
         required: false
@@ -58,7 +66,10 @@ jobs:
           git config --global user.email 'github-actions@github.com'
 
       - name: Install vivoblueos-josh-sync
-        run: cargo install --locked --git https://github.com/vivoblueos/josh-sync
+        run: |
+          cargo install --locked \
+            --git "https://github.com/${{ inputs.josh-sync-repository }}" \
+            --rev "${{ inputs.josh-sync-revision }}"
 
       - name: Perform BlueOS sync
         id: josh-sync

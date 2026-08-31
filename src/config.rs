@@ -8,6 +8,13 @@ pub struct JoshConfig {
     #[serde(default = "default_org")]
     pub org: String,
     pub repo: String,
+    /// GitHub owner/name of the BlueOS monorepo from which this subtree is synchronized.
+    /// For example `Natural-selection1/blueos-mono` during a trial or `vivoblueos/blueos`
+    /// in production.
+    pub upstream_repo: String,
+    /// Branch in the BlueOS monorepo to synchronize.
+    /// We resolve this branch to a commit SHA before Josh is invoked.
+    pub upstream_branch: String,
     /// Relative path where the subtree is located in the BlueOS monorepo.
     /// For example `src/doc/blueos-dev-guide`.
     pub path: Option<String>,
@@ -42,6 +49,24 @@ impl JoshConfig {
         let config = toml::to_string_pretty(self).context("cannot serialize config")?;
         std::fs::write(path, config).context("cannot write config")?;
         Ok(())
+    }
+
+    /// Return the name of the configured monorepo, without its GitHub owner.
+    /// This is used to locate a contributor's fork during a reverse push.
+    pub fn upstream_repo_name(&self) -> anyhow::Result<&str> {
+        let mut parts = self.upstream_repo.split('/');
+        let owner = parts.next();
+        let repo = parts.next();
+        if owner.is_none_or(str::is_empty)
+            || repo.is_none_or(str::is_empty)
+            || parts.next().is_some()
+        {
+            return Err(anyhow::anyhow!(
+                "`upstream-repo` must be a GitHub owner/repository pair, got `{}`",
+                self.upstream_repo
+            ));
+        }
+        Ok(repo.expect("validated above"))
     }
 }
 
@@ -117,5 +142,45 @@ pub fn load_config(path: &Path) -> anyhow::Result<JoshConfig> {
         };
     }
 
+    config.upstream_repo_name()?;
+    if config.upstream_branch.trim().is_empty() {
+        return Err(anyhow::anyhow!("`upstream-branch` must not be empty"));
+    }
+
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(upstream_repo: &str) -> JoshConfig {
+        JoshConfig {
+            org: "Natural-selection1".to_string(),
+            repo: "kernel".to_string(),
+            upstream_repo: upstream_repo.to_string(),
+            upstream_branch: "main".to_string(),
+            path: Some("kernel".to_string()),
+            filter: None,
+            post_pull: vec![],
+            subtree_filter: None,
+            filter_version: FilterVersion::Version2,
+        }
+    }
+
+    #[test]
+    fn obtains_the_monorepo_name_from_a_github_repository() {
+        assert_eq!(
+            config("Natural-selection1/blueos-mono")
+                .upstream_repo_name()
+                .unwrap(),
+            "blueos-mono"
+        );
+    }
+
+    #[test]
+    fn rejects_an_invalid_monorepo_repository() {
+        assert!(config("blueos-mono").upstream_repo_name().is_err());
+        assert!(config("owner/repo/extra").upstream_repo_name().is_err());
+    }
 }

@@ -2,7 +2,12 @@
 #org = "vivoblueos"
 # Name of the repository
 repo = "kernel"
-# Path where the subtree is located in `vivoblueos/blueos`
+# GitHub owner/name of the BlueOS monorepo. Keep this tracked in every subtree so a trial and
+# production deployment have an explicit, reviewable source.
+upstream-repo = "<github-owner>/<blueos-monorepo>"
+# Branch to synchronize in the configured monorepo.
+upstream-branch = "main"
+# Path where the subtree is located in the configured BlueOS monorepo.
 path = "kernel"
 
 # Optionally, you can specify the complete Josh filter for complex cases
@@ -14,7 +19,7 @@ path = "kernel"
 # If not specified, it defaults to version 1.
 # Version 1 - default "legacy" behavior of Josh, which preserves empty merge commits
 # Version 2 - newer behavior that skips empty merge commits
-#filter-version = 1
+filter-version = 2
 
 # Optionally, you can specify a subtree filter.
 # This will be applied to the local `HEAD` during the round-trip check.

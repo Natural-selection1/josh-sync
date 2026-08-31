@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use vivoblueos_josh_sync::SyncContext;
 use vivoblueos_josh_sync::config::{JoshConfig, load_config};
 use vivoblueos_josh_sync::josh::{JoshProxy, try_install_josh_proxy};
-use vivoblueos_josh_sync::sync::{BlueosPullError, DEFAULT_UPSTREAM_REPO, FilterVersion, GitSync};
+use vivoblueos_josh_sync::sync::{BlueosPullError, FilterVersion, GitSync};
 use vivoblueos_josh_sync::utils::{get_current_head_sha, prompt};
 
 const DEFAULT_CONFIG_PATH: &str = "josh-sync.toml";
@@ -20,17 +20,21 @@ struct Args {
 enum Command {
     /// Initialize a config file and an empty `blueos-version` file for this repository.
     Init,
-    /// Pull changes from the main `vivoblueos/blueos` repository.
+    /// Pull changes from the BlueOS monorepo configured in `josh-sync.toml`.
     /// This creates new commits that should be then merged into this subtree repository.
     Pull {
-        /// Override the upstream repository from which we pull changes.
-        /// Can be used to perform experimental pulls e.g. to test changes in the subtree repository
-        /// that have not yet been merged in `vivoblueos/blueos`.
-        #[clap(long, default_value(DEFAULT_UPSTREAM_REPO))]
-        upstream_repo: String,
+        /// Override the configured upstream repository for a local experiment.
+        /// CI should use the checked-in `upstream-repo` instead.
+        #[clap(long)]
+        upstream_repo: Option<String>,
+
+        /// Override the configured upstream branch for a local experiment.
+        /// CI should use the checked-in `upstream-branch` instead.
+        #[clap(long)]
+        upstream_branch: Option<String>,
 
         /// Override the BlueOS monorepo commit that we should pull from.
-        /// By default, josh-sync will pull from the BlueOS monorepo HEAD (latest commit).
+        /// By default, josh-sync resolves the configured BlueOS monorepo branch.
         #[clap(long)]
         upstream_commit: Option<String>,
 
@@ -43,8 +47,8 @@ enum Command {
         #[clap(flatten)]
         shared: SharedArgs,
     },
-    /// Push changes into the main `vivoblueos/blueos` repository `branch` of a BlueOS fork under
-    /// the given GitHub `username`.
+    /// Push changes into `branch` of a fork of the configured BlueOS monorepo under the given
+    /// GitHub `username`.
     /// The pushed branch should then be merged into the BlueOS monorepo.
     Push {
         /// Branch that should be pushed to your remote
@@ -86,6 +90,8 @@ fn main() -> anyhow::Result<()> {
             let config = JoshConfig {
                 org: "vivoblueos".to_string(),
                 repo: "<repository-name>".to_string(),
+                upstream_repo: "<github-owner>/<blueos-monorepo>".to_string(),
+                upstream_branch: "main".to_string(),
                 path: Some("<relative-subtree-path>".to_string()),
                 filter: None,
                 post_pull: vec![],
@@ -109,6 +115,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Pull {
             upstream_repo,
+            upstream_branch,
             upstream_commit,
             allow_noop,
             shared,
@@ -116,7 +123,10 @@ fn main() -> anyhow::Result<()> {
             let ctx = load_context(&shared.config_path, &shared.blueos_version_path)?;
             let josh = get_josh_proxy(shared.josh_proxy, shared.verbose)?;
             let sync = GitSync::new(ctx.clone(), josh, shared.verbose);
-            match sync.blueos_pull(upstream_repo, upstream_commit, allow_noop) {
+            let upstream_repo = upstream_repo.unwrap_or_else(|| ctx.config.upstream_repo.clone());
+            let upstream_branch =
+                upstream_branch.unwrap_or_else(|| ctx.config.upstream_branch.clone());
+            match sync.blueos_pull(upstream_repo, upstream_branch, upstream_commit, allow_noop) {
                 Ok(result) => {
                     if !maybe_create_gh_pr(
                         &ctx.config.full_repo_name(),
@@ -169,7 +179,7 @@ fn main() -> anyhow::Result<()> {
             let merge_msg = format!(
                 r#"Subtree update of `{repo}` to https://github.com/{full_repo}/commit/{head}.
 
-Created using https://github.com/vivoblueos/josh-sync.
+Created using vivoblueos-josh-sync.
 
 r? @ghost"#,
                 repo = ctx.config.repo,
@@ -178,9 +188,11 @@ r? @ghost"#,
 
             println!(
                 r#"You can create the BlueOS monorepo PR using the following URL:
-https://github.com/{DEFAULT_UPSTREAM_REPO}/compare/{username}:{branch}?quick_pull=1&title={}&body={}"#,
+https://github.com/{upstream_repo}/compare/{upstream_branch}...{username}:{branch}?quick_pull=1&title={}&body={}"#,
                 urlencoding::encode(&title),
-                urlencoding::encode(&merge_msg)
+                urlencoding::encode(&merge_msg),
+                upstream_repo = ctx.config.upstream_repo,
+                upstream_branch = ctx.config.upstream_branch
             );
         }
     }
