@@ -1,0 +1,111 @@
+name: 'BlueOS Subtree Sync'
+
+on:
+  workflow_call:
+    inputs:
+      github-app-id:
+        description: 'ID of a GitHub app that will create the sync PR'
+        required: true
+        type: string
+      pr-author:
+        description: 'Username of a GitHub account that will create the sync PR. Must include [bot] at the end.'
+        required: true
+        type: string
+      branch-name:
+        description: 'Name of the branch to create for the sync'
+        required: false
+        default: blueos-pull
+        type: string
+      pr-base-branch:
+        description: 'Base branch for the pull request'
+        required: false
+        default: main
+        type: string
+      environment:
+        description: 'GitHub Actions environment that will be used to access secrets'
+        required: false
+        type: string
+    secrets:
+      github-app-secret:
+        description: 'Secret for a GitHub app that will create the sync PR'
+        required: true
+
+jobs:
+  perform-pull:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      pr_url: ${{ steps.update-pr.outputs.pr_url }}
+      pull_result: ${{ steps.josh-sync.outputs.pull_result }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: '0'
+
+      - name: Install stable Rust toolchain
+        run: rustup update stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: "/home/runner/.cache/vivoblueos-josh"
+
+      - name: Setup bot git name and email
+        run: |
+          git config --global user.name 'The vivoblueos-josh-sync Cronjob Bot'
+          git config --global user.email 'github-actions@github.com'
+
+      - name: Install vivoblueos-josh-sync
+        run: cargo install --locked --git https://github.com/vivoblueos/josh-sync
+
+      - name: Perform BlueOS sync
+        id: josh-sync
+        shell: bash {0}
+        run: |
+          vivoblueos-josh-sync pull
+          exitcode=$?
+
+          if [ $exitcode -eq 0 ]; then
+            echo "pull_result=pull-finished" >> $GITHUB_OUTPUT
+          elif [ $exitcode -eq 2 ]; then
+            echo "pull_result=skipped" >> $GITHUB_OUTPUT
+            exitcode=0
+          else
+            echo "pull_result=failed" >> $GITHUB_OUTPUT
+          fi
+
+          exit ${exitcode}
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ inputs.github-app-id }}
+          private-key: ${{ secrets.github-app-secret }}
+
+      - name: Push changes to a branch
+        if: ${{ steps.josh-sync.outputs.pull_result == 'pull-finished' }}
+        run: |
+          BRANCH="${{ inputs.branch-name }}"
+          git switch -c $BRANCH
+          git push -u origin $BRANCH --force
+
+      - name: Create pull request
+        id: update-pr
+        if: ${{ steps.josh-sync.outputs.pull_result == 'pull-finished' }}
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Check if an open pull request already exists
+          RESULT=`gh pr list --author ${{ inputs.pr-author }} --state open -q 'map(select(.title=="BlueOS pull update")) | length' --json title`
+          if [[ "$RESULT" -eq 0 ]]; then
+            echo "Creating new pull request"
+            PR_URL=`gh pr create -B ${{ inputs.pr-base-branch }} --title 'BlueOS pull update' --body 'Latest update from the BlueOS monorepo.'`
+            echo "Created pull request ${PR_URL}"
+            echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          else
+            PR_URL=`gh pr list --author ${{ inputs.pr-author }} --state open -q 'map(select(.title=="BlueOS pull update")) | .[0].url' --json url,title`
+            echo "Updating pull request ${PR_URL}"
+            echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          fi
