@@ -8,8 +8,8 @@ pub struct JoshConfig {
     #[serde(default = "default_org")]
     pub org: String,
     pub repo: String,
-    /// Relative path where the subtree is located in rust-lang/rust.
-    /// For example `src/doc/rustc-dev-guide`.
+    /// Relative path where the subtree is located in the BlueOS monorepo.
+    /// For example `src/doc/blueos-dev-guide`.
     pub path: Option<String>,
     /// Optional filter specification for Josh.
     /// It cannot be used together with `path`.
@@ -102,7 +102,7 @@ pub struct PostPullOperation {
 }
 
 fn default_org() -> String {
-    String::from("rust-lang")
+    String::from("vivoblueos")
 }
 
 pub fn load_config(path: &Path) -> anyhow::Result<JoshConfig> {

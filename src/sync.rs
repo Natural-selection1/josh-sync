@@ -7,18 +7,18 @@ use crate::utils::{run_command, stream_command};
 use anyhow::{Context, Error};
 use std::path::{Path, PathBuf};
 
-pub const DEFAULT_UPSTREAM_REPO: &str = "rust-lang/rust";
+pub const DEFAULT_UPSTREAM_REPO: &str = "vivoblueos/blueos";
 
 const NO_REBASE_WARN: &str = "Do NOT amend/squash/rebase any of the commits produced by this tool; that can badly break future syncs.";
 
-pub enum RustcPullError {
+pub enum BlueosPullError {
     /// No changes are available to be pulled.
     NothingToPull,
-    /// A rustc-pull has failed, probably a git operation error has occurred.
+    /// A BlueOS pull has failed, probably a git operation error has occurred.
     PullFailed(anyhow::Error),
 }
 
-impl From<anyhow::Error> for RustcPullError {
+impl From<anyhow::Error> for BlueosPullError {
     fn from(error: Error) -> Self {
         Self::PullFailed(error)
     }
@@ -57,12 +57,12 @@ impl GitSync {
         }
     }
 
-    pub fn rustc_pull(
+    pub fn blueos_pull(
         &self,
         upstream_repo: String,
         upstream_commit: Option<String>,
         allow_noop: bool,
-    ) -> Result<PullResult, RustcPullError> {
+    ) -> Result<PullResult, BlueosPullError> {
         // The upstream commit that we want to pull
         let upstream_sha = if let Some(sha) = upstream_commit {
             sha
@@ -79,7 +79,9 @@ impl GitSync {
             .context("cannot fetch upstream commit")?;
             out.split_whitespace()
                 .next()
-                .unwrap_or_else(|| panic!("Could not obtain Rust repo HEAD from remote: '{out}'"))
+                .unwrap_or_else(|| {
+                    panic!("Could not obtain BlueOS monorepo HEAD from remote: '{out}'")
+                })
                 .to_owned()
         };
 
@@ -113,7 +115,7 @@ impl GitSync {
         if let Some(previous_base_commit) = self.context.last_upstream_sha.as_ref()
             && *previous_base_commit == upstream_sha
         {
-            return Err(RustcPullError::NothingToPull);
+            return Err(BlueosPullError::NothingToPull);
         }
 
         // Create a checkpoint to which we reset if something unusual happens
@@ -123,7 +125,7 @@ impl GitSync {
         // the merge has confused the heck out of josh in the past.
         // We pass `--no-verify` to avoid running git hooks.
         // We do this before the merge so that if there are merge conflicts, we have
-        // the right rust-version file while resolving them.
+        // the right blueos-version file while resolving them.
         std::fs::write(
             &self.context.last_upstream_sha_path,
             format!("{upstream_sha}\n"),
@@ -138,22 +140,22 @@ impl GitSync {
         let prep_message = format!(
             r#"Prepare for merging from {upstream_repo}
 
-This updates the rust-version file to {upstream_sha}."#,
+This updates the blueos-version file to {upstream_sha}."#,
         );
 
-        let rust_version_path = self
+        let blueos_version_path = self
             .context
             .last_upstream_sha_path
             .to_string_lossy()
             .to_string();
         // Add the file to git index, in case this is the first time we perform the sync
         // Otherwise `git commit <file>` below wouldn't work.
-        run_command(["git", "add", &rust_version_path], self.verbose)?;
+        run_command(["git", "add", &blueos_version_path], self.verbose)?;
         run_command(
             [
                 "git",
                 "commit",
-                &rust_version_path,
+                &blueos_version_path,
                 "--no-verify",
                 "-m",
                 &prep_message,
@@ -162,7 +164,7 @@ This updates the rust-version file to {upstream_sha}."#,
         )
         .context("cannot create preparation commit")?;
 
-        // Fetch given rustc commit.
+        // Fetch the given BlueOS monorepo commit.
         run_command(["git", "fetch", &josh_url], self.verbose)
             .context("cannot fetch git state through Josh")?;
 
@@ -192,7 +194,7 @@ Upstream ref: {upstream_repo}@{upstream_sha}
 Filtered ref: {sub_org}/{sub_repo}@{incoming_ref}
 Upstream diff: https://github.com/{DEFAULT_UPSTREAM_REPO}/compare/{prev_upstream_sha}...{upstream_sha}
 
-This merge was created using https://github.com/rust-lang/josh-sync.
+This merge was created using https://github.com/vivoblueos/josh-sync.
 "#,
             upstream_head_short = &upstream_sha[..12],
             sub_org = self.context.config.org,
@@ -227,7 +229,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
             );
             eprintln!("{NO_REBASE_WARN}");
             git_reset.disarm();
-            return Err(RustcPullError::PullFailed(error));
+            return Err(BlueosPullError::PullFailed(error));
         }
 
         // Now detect if something has actually been pulled
@@ -236,15 +238,15 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         // This is the easy case, no merge was performed, so we bail, unless `allow_noop` is true
         if current_sha == sha_pre_merge && !allow_noop {
             eprintln!("No merge was performed, no changes to pull were found. Rolling back.");
-            return Err(RustcPullError::NothingToPull);
+            return Err(BlueosPullError::NothingToPull);
         }
 
         // But it can be more tricky - we can have only empty merge/rollup merge commits from
-        // rustc, so a merge was created, but the in-tree diff can still be empty.
+        // the BlueOS monorepo, so a merge was created, but the in-tree diff can still be empty.
         // In that case we also bail, unless `allow_noop` is true.
         if self.has_empty_diff(&sha_pre_merge) && !allow_noop {
             eprintln!("Only empty changes were pulled. Rolling back.");
-            return Err(RustcPullError::NothingToPull);
+            return Err(BlueosPullError::NothingToPull);
         }
 
         println!("Pull finished! Current HEAD is {current_sha}");
@@ -273,7 +275,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         })
     }
 
-    pub fn rustc_push(&self, username: &str, branch: &str) -> anyhow::Result<()> {
+    pub fn blueos_push(&self, username: &str, branch: &str) -> anyhow::Result<()> {
         ensure_clean_git_state(self.verbose)?;
 
         let base_upstream_sha = self.context.last_upstream_sha.clone().unwrap_or_default();
@@ -284,24 +286,24 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
             .start(&self.context.config)
             .context("cannot start josh-proxy")?;
         let josh_url = josh.git_url(
-            &format!("{username}/rust"),
+            &format!("{username}/blueos"),
             None,
             &construct_josh_filter(&self.context.config),
         );
-        let user_upstream_url = format!("https://github.com/{username}/rust");
+        let user_upstream_url = format!("https://github.com/{username}/blueos");
 
-        let rustc_git =
-            prepare_rustc_checkout(self.verbose).context("cannot prepare rustc checkout")?;
+        let blueos_git = prepare_blueos_checkout(self.verbose)
+            .context("cannot prepare BlueOS monorepo checkout")?;
 
         // Prepare the branch. Pushing works much better if we use as base exactly
-        // the commit that we pulled from last time, so we use the `rust-version`
+        // the commit that we pulled from last time, so we use the `blueos-version`
         // file to find out which commit that would be.
         println!("Preparing {user_upstream_url} (base: {base_upstream_sha})...");
 
         // Check if the remote branch doesn't already exist
         if run_command_at(
             ["git", "fetch", &user_upstream_url, branch],
-            &rustc_git,
+            &blueos_git,
             self.verbose,
         )
         .is_ok()
@@ -319,7 +321,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
                 &format!("https://github.com/{DEFAULT_UPSTREAM_REPO}"),
                 &base_upstream_sha,
             ],
-            &rustc_git,
+            &blueos_git,
             self.verbose,
         )
         .context("cannot download latest upstream SHA")?;
@@ -332,7 +334,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
                 &user_upstream_url,
                 &format!("{base_upstream_sha}:refs/heads/{branch}"),
             ],
-            &rustc_git,
+            &blueos_git,
             self.verbose,
         )
         .context("cannot push to your fork")?;
@@ -400,12 +402,12 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         let fetch_head = run_command(["git", "rev-parse", "FETCH_HEAD"], self.verbose)?;
         if head != fetch_head {
             return Err(anyhow::anyhow!(
-                "Josh created a non-roundtrip push! Do NOT merge this into rustc!\n\
+                "Josh created a non-roundtrip push! Do NOT merge this into the BlueOS monorepo!\n\
                 Expected {head}, got {fetch_head}."
             ));
         }
         println!(
-            "Confirmed that the push round-trips back to {} properly. Please create a rustc PR.",
+            "Confirmed that the push round-trips back to {} properly. Please create a BlueOS monorepo PR.",
             self.context.config.repo
         );
         Ok(())
@@ -421,29 +423,29 @@ fn get_josh_filter(verbose: bool) -> anyhow::Result<JoshFilter> {
     }
 }
 
-/// Find a rustc repo we can do our push preparation in.
-fn prepare_rustc_checkout(verbose: bool) -> anyhow::Result<PathBuf> {
-    if let Ok(rustc_git) = std::env::var("RUSTC_GIT") {
-        let rustc_git = PathBuf::from(rustc_git);
+/// Find a BlueOS monorepo we can do our push preparation in.
+fn prepare_blueos_checkout(verbose: bool) -> anyhow::Result<PathBuf> {
+    if let Ok(blueos_git) = std::env::var("BLUEOS_GIT") {
+        let blueos_git = PathBuf::from(blueos_git);
         assert!(
-            rustc_git.is_dir(),
-            "rustc checkout path must be a directory"
+            blueos_git.is_dir(),
+            "BlueOS monorepo checkout path must be a directory"
         );
-        return Ok(rustc_git);
+        return Ok(blueos_git);
     };
 
     // Otherwise, download it
-    let path = "rustc-checkout";
+    let path = "blueos-checkout";
     if !Path::new(path).join(".git").exists() {
         if prompt(
             &format!(
-                "Path to a rustc checkout is not configured via the RUSTC_GIT environment variable, and {path} directory was not found. Do you want to download a rustc checkout into {path}?",
+                "Path to a BlueOS monorepo checkout is not configured via the BLUEOS_GIT environment variable, and {path} directory was not found. Do you want to download a BlueOS checkout into {path}?",
             ),
             // Download git history if we are on CI
             true,
         ) {
             println!(
-                "Cloning rustc into `{path}`. Use RUSTC_GIT environment variable to override the location of the checkout"
+                "Cloning the BlueOS monorepo into `{path}`. Use the BLUEOS_GIT environment variable to override the location of the checkout"
             );
             // Stream stdout/stderr to the terminal, so that the user sees clone progress
             stream_command(
@@ -456,9 +458,11 @@ fn prepare_rustc_checkout(verbose: bool) -> anyhow::Result<PathBuf> {
                 ],
                 verbose,
             )
-            .context("cannot clone rustc")?;
+            .context("cannot clone the BlueOS monorepo")?;
         } else {
-            return Err(anyhow::anyhow!("cannot continue without a rustc checkout"));
+            return Err(anyhow::anyhow!(
+                "cannot continue without a BlueOS monorepo checkout"
+            ));
         }
     }
     Ok(PathBuf::from(path))
