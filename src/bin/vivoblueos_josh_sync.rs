@@ -1,14 +1,14 @@
 use anyhow::Context;
 use clap::Parser;
-use rustc_josh_sync::SyncContext;
-use rustc_josh_sync::config::{JoshConfig, load_config};
-use rustc_josh_sync::josh::{JoshProxy, try_install_josh_proxy};
-use rustc_josh_sync::sync::{DEFAULT_UPSTREAM_REPO, FilterVersion, GitSync, RustcPullError};
-use rustc_josh_sync::utils::{get_current_head_sha, prompt};
 use std::path::{Path, PathBuf};
+use vivoblueos_josh_sync::SyncContext;
+use vivoblueos_josh_sync::config::{JoshConfig, load_config};
+use vivoblueos_josh_sync::josh::{JoshProxy, try_install_josh_proxy};
+use vivoblueos_josh_sync::sync::{BlueosPullError, DEFAULT_UPSTREAM_REPO, FilterVersion, GitSync};
+use vivoblueos_josh_sync::utils::{get_current_head_sha, prompt};
 
 const DEFAULT_CONFIG_PATH: &str = "josh-sync.toml";
-const DEFAULT_RUST_VERSION_PATH: &str = "rust-version";
+const DEFAULT_BLUEOS_VERSION_PATH: &str = "blueos-version";
 
 #[derive(clap::Parser)]
 struct Args {
@@ -18,19 +18,19 @@ struct Args {
 
 #[derive(clap::Parser)]
 enum Command {
-    /// Initialize a config file and an empty `rust-version` file for this repository.
+    /// Initialize a config file and an empty `blueos-version` file for this repository.
     Init,
-    /// Pull changes from the main `rust-lang/rust` repository.
+    /// Pull changes from the main `vivoblueos/blueos` repository.
     /// This creates new commits that should be then merged into this subtree repository.
     Pull {
         /// Override the upstream repository from which we pull changes.
         /// Can be used to perform experimental pulls e.g. to test changes in the subtree repository
-        /// that have not yet been merged in `rust-lang/rust`.
+        /// that have not yet been merged in `vivoblueos/blueos`.
         #[clap(long, default_value(DEFAULT_UPSTREAM_REPO))]
         upstream_repo: String,
 
-        /// Override the rustc commit that we should pull from.
-        /// By default, josh-sync will pull from rustc's HEAD (latest commit).
+        /// Override the BlueOS monorepo commit that we should pull from.
+        /// By default, josh-sync will pull from the BlueOS monorepo HEAD (latest commit).
         #[clap(long)]
         upstream_commit: Option<String>,
 
@@ -43,9 +43,9 @@ enum Command {
         #[clap(flatten)]
         shared: SharedArgs,
     },
-    /// Push changes into the main `rust-lang/rust` repository `branch` of a `rustc` fork under
+    /// Push changes into the main `vivoblueos/blueos` repository `branch` of a BlueOS fork under
     /// the given GitHub `username`.
-    /// The pushed branch should then be merged into the `rustc` repository.
+    /// The pushed branch should then be merged into the BlueOS monorepo.
     Push {
         /// Branch that should be pushed to your remote
         branch: String,
@@ -63,9 +63,9 @@ struct SharedArgs {
     #[clap(long, default_value(DEFAULT_CONFIG_PATH))]
     config_path: PathBuf,
 
-    /// Path to a file storing the last synchronized rustc commit.
-    #[clap(long, default_value(DEFAULT_RUST_VERSION_PATH))]
-    rust_version_path: PathBuf,
+    /// Path to a file storing the last synchronized BlueOS monorepo commit.
+    #[clap(long, default_value(DEFAULT_BLUEOS_VERSION_PATH))]
+    blueos_version_path: PathBuf,
 
     /// Path to the josh-proxy binary to be used.
     /// If not specified, it will be installed automatically.
@@ -84,7 +84,7 @@ fn main() -> anyhow::Result<()> {
     match args.cmd {
         Command::Init => {
             let config = JoshConfig {
-                org: "rust-lang".to_string(),
+                org: "vivoblueos".to_string(),
                 repo: "<repository-name>".to_string(),
                 path: Some("<relative-subtree-path>".to_string()),
                 filter: None,
@@ -97,12 +97,14 @@ fn main() -> anyhow::Result<()> {
                 .context("cannot write config")?;
             println!("Created config file at {DEFAULT_CONFIG_PATH}");
 
-            if !Path::new(DEFAULT_RUST_VERSION_PATH).is_file() {
-                std::fs::write(DEFAULT_RUST_VERSION_PATH, "")
-                    .context("cannot write rust-version file")?;
-                println!("Created empty rust-version file at {DEFAULT_RUST_VERSION_PATH}");
+            if !Path::new(DEFAULT_BLUEOS_VERSION_PATH).is_file() {
+                std::fs::write(DEFAULT_BLUEOS_VERSION_PATH, "")
+                    .context("cannot write blueos-version file")?;
+                println!("Created empty blueos-version file at {DEFAULT_BLUEOS_VERSION_PATH}");
             } else {
-                println!("{DEFAULT_RUST_VERSION_PATH} already exists, not doing anything with it");
+                println!(
+                    "{DEFAULT_BLUEOS_VERSION_PATH} already exists, not doing anything with it"
+                );
             }
         }
         Command::Pull {
@@ -111,14 +113,14 @@ fn main() -> anyhow::Result<()> {
             allow_noop,
             shared,
         } => {
-            let ctx = load_context(&shared.config_path, &shared.rust_version_path)?;
+            let ctx = load_context(&shared.config_path, &shared.blueos_version_path)?;
             let josh = get_josh_proxy(shared.josh_proxy, shared.verbose)?;
             let sync = GitSync::new(ctx.clone(), josh, shared.verbose);
-            match sync.rustc_pull(upstream_repo, upstream_commit, allow_noop) {
+            match sync.blueos_pull(upstream_repo, upstream_commit, allow_noop) {
                 Ok(result) => {
                     if !maybe_create_gh_pr(
                         &ctx.config.full_repo_name(),
-                        "Rustc pull update",
+                        "BlueOS pull update",
                         &result.merge_commit_message,
                     )? {
                         println!(
@@ -127,13 +129,13 @@ fn main() -> anyhow::Result<()> {
                         );
                     }
                 }
-                Err(RustcPullError::NothingToPull) => {
+                Err(BlueosPullError::NothingToPull) => {
                     eprintln!("Nothing to pull");
                     if !allow_noop {
                         std::process::exit(2);
                     }
                 }
-                Err(RustcPullError::PullFailed(error)) => {
+                Err(BlueosPullError::PullFailed(error)) => {
                     eprintln!("Pull failure: {error:?}");
                     if !shared.verbose {
                         eprintln!("Rerun with `-v` to see executed commands");
@@ -147,11 +149,11 @@ fn main() -> anyhow::Result<()> {
             branch,
             shared,
         } => {
-            let ctx = load_context(&shared.config_path, &shared.rust_version_path)?;
+            let ctx = load_context(&shared.config_path, &shared.blueos_version_path)?;
             let josh = get_josh_proxy(shared.josh_proxy, shared.verbose)?;
             let sync = GitSync::new(ctx.clone(), josh, shared.verbose);
             if let Err(error) = sync
-                .rustc_push(&username, &branch)
+                .blueos_push(&username, &branch)
                 .context("cannot perform push")
             {
                 if !shared.verbose {
@@ -167,7 +169,7 @@ fn main() -> anyhow::Result<()> {
             let merge_msg = format!(
                 r#"Subtree update of `{repo}` to https://github.com/{full_repo}/commit/{head}.
 
-Created using https://github.com/rust-lang/josh-sync.
+Created using https://github.com/vivoblueos/josh-sync.
 
 r? @ghost"#,
                 repo = ctx.config.repo,
@@ -175,7 +177,7 @@ r? @ghost"#,
             );
 
             println!(
-                r#"You can create the rustc PR using the following URL:
+                r#"You can create the BlueOS monorepo PR using the following URL:
 https://github.com/{DEFAULT_UPSTREAM_REPO}/compare/{username}:{branch}?quick_pull=1&title={}&body={}"#,
                 urlencoding::encode(&title),
                 urlencoding::encode(&merge_msg)
@@ -186,18 +188,18 @@ https://github.com/{DEFAULT_UPSTREAM_REPO}/compare/{username}:{branch}?quick_pul
     Ok(())
 }
 
-fn load_context(config_path: &Path, rust_version_path: &Path) -> anyhow::Result<SyncContext> {
+fn load_context(config_path: &Path, blueos_version_path: &Path) -> anyhow::Result<SyncContext> {
     let config = load_config(config_path)
         .context("cannot load config. Run the `init` command to initialize it.")?;
-    let rust_version = std::fs::read_to_string(rust_version_path)
-        .inspect_err(|err| eprintln!("Cannot load rust-version file: {err:?}"))
+    let blueos_version = std::fs::read_to_string(blueos_version_path)
+        .inspect_err(|err| eprintln!("Cannot load blueos-version file: {err:?}"))
         .map(|version| version.trim().to_string())
         .map(Some)
         .unwrap_or_default();
     Ok(SyncContext {
         config,
-        last_upstream_sha_path: rust_version_path.to_path_buf(),
-        last_upstream_sha: rust_version,
+        last_upstream_sha_path: blueos_version_path.to_path_buf(),
+        last_upstream_sha: blueos_version,
     })
 }
 
