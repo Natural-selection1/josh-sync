@@ -49,9 +49,17 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ inputs.github-app-id }}
+          private-key: ${{ secrets.github-app-secret }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: '0'
+          # Keep the App credential in origin so a bot push triggers PR CI.
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Install stable Rust toolchain
         run: rustup update stable
@@ -88,12 +96,6 @@ jobs:
           fi
 
           exit ${exitcode}
-
-      - uses: actions/create-github-app-token@v3
-        id: app-token
-        with:
-          app-id: ${{ inputs.github-app-id }}
-          private-key: ${{ secrets.github-app-secret }}
 
       - name: Push changes to a branch
         if: ${{ steps.josh-sync.outputs.pull_result == 'pull-finished' }}
