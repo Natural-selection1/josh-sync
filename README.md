@@ -26,11 +26,11 @@ repo = "kernel"
 path = "kernel"
 ```
 
-Repositories nested under `apps/` use a nested path. In this example, `apps_shell` maps to `app/shell` in `vivoblueos/blueos`:
+Repositories nested under `apps/` use a nested path. In this example, `apps_shell` maps to `apps/shell` in `vivoblueos/blueos`:
 
 ```toml
 repo = "apps_shell"
-path = "app/shell"
+path = "apps/shell"
 ```
 
 Repositories with a default branch other than `main` do not need a special `josh-sync.toml` setting. Configure that branch only in the CI workflow that consumes this tool:
