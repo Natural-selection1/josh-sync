@@ -1,9 +1,9 @@
-# GitHub org of the repository (optional, `rust-lang` is the default)
-#org = "rust-lang"
+# GitHub org of the repository (optional, `vivoblueos` is the default)
+#org = "vivoblueos"
 # Name of the repository
-repo = "stdarch"
-# Path where the subtree is located in rust-lang/rust
-path = "library/stdarch"
+repo = "kernel"
+# Path where the subtree is located in `vivoblueos/blueos`
+path = "kernel"
 
 # Optionally, you can specify the complete Josh filter for complex cases
 # Note that this option is mutually exclusive with `path`
@@ -25,9 +25,9 @@ path = "library/stdarch"
 # If you are not doing a 1:1 mirror, set this to a filter that transforms your local
 # `HEAD` into a tree that exactly matches the upstream tree after the `filter`
 # is applied.
-# E.g., if the `filter` is ":/compiler/rustc_public:prefix=rustc_public",
+# E.g., if the `filter` is ":/compiler/blueos_component:prefix=blueos_component",
 # the `subtree-filter` should be:
-#subtree-filter = ":/rustc_public:prefix=rustc_public"
+#subtree-filter = ":/blueos_component:prefix=blueos_component"
 
 # Optionally, you can specify a set of commands executed after a successful pull.
 # If the executed command changes the local git state (performs some modifications to files that
