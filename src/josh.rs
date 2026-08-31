@@ -144,7 +144,7 @@ fn try_install_josh_program(program: JoshProgram, verbose: bool) -> Option<PathB
     args.push(krate);
 
     run_command_by_path(
-        &Path::new("cargo"),
+        Path::new("cargo"),
         &args,
         &std::env::current_dir().unwrap(),
         false,

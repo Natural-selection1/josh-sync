@@ -110,10 +110,10 @@ impl GitSync {
         // If the upstream SHA hasn't changed from the latest sync, there is nothing to pull
         // We distinguish this situation for tools that might not want to consider this to
         // be an error.
-        if let Some(previous_base_commit) = self.context.last_upstream_sha.as_ref() {
-            if *previous_base_commit == upstream_sha {
-                return Err(RustcPullError::NothingToPull);
-            }
+        if let Some(previous_base_commit) = self.context.last_upstream_sha.as_ref()
+            && *previous_base_commit == upstream_sha
+        {
+            return Err(RustcPullError::NothingToPull);
         }
 
         // Create a checkpoint to which we reset if something unusual happens
@@ -126,7 +126,7 @@ impl GitSync {
         // the right rust-version file while resolving them.
         std::fs::write(
             &self.context.last_upstream_sha_path,
-            &format!("{upstream_sha}\n"),
+            format!("{upstream_sha}\n"),
         )
         .with_context(|| {
             anyhow::anyhow!(
@@ -148,9 +148,9 @@ This updates the rust-version file to {upstream_sha}."#,
             .to_string();
         // Add the file to git index, in case this is the first time we perform the sync
         // Otherwise `git commit <file>` below wouldn't work.
-        run_command(&["git", "add", &rust_version_path], self.verbose)?;
+        run_command(["git", "add", &rust_version_path], self.verbose)?;
         run_command(
-            &[
+            [
                 "git",
                 "commit",
                 &rust_version_path,
@@ -163,13 +163,13 @@ This updates the rust-version file to {upstream_sha}."#,
         .context("cannot create preparation commit")?;
 
         // Fetch given rustc commit.
-        run_command(&["git", "fetch", &josh_url], self.verbose)
+        run_command(["git", "fetch", &josh_url], self.verbose)
             .context("cannot fetch git state through Josh")?;
 
         // This should not add any new root commits. So count those before and after merging.
         let num_roots = || -> anyhow::Result<u32> {
             Ok(run_command(
-                &["git", "rev-list", "HEAD", "--max-parents=0", "--count"],
+                ["git", "rev-list", "HEAD", "--max-parents=0", "--count"],
                 self.verbose,
             )
             .context("failed to determine the number of root commits")?
@@ -207,7 +207,7 @@ This merge was created using https://github.com/rust-lang/josh-sync.
         // Merge the fetched commit.
         // It is useful to print stdout/stderr here, because it shows the git diff summary
         if let Err(error) = stream_command(
-            &[
+            [
                 "git",
                 "merge",
                 "FETCH_HEAD",
@@ -254,7 +254,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
             println!("Running post-pull operation(s)");
 
             for op in &self.context.config.post_pull {
-                self.run_post_pull_op(&op)?;
+                self.run_post_pull_op(op)?;
             }
         }
 
@@ -300,7 +300,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
 
         // Check if the remote branch doesn't already exist
         if run_command_at(
-            &["git", "fetch", &user_upstream_url, branch],
+            ["git", "fetch", &user_upstream_url, branch],
             &rustc_git,
             self.verbose,
         )
@@ -313,7 +313,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
 
         // Download the base upstream SHA
         run_command_at(
-            &[
+            [
                 "git",
                 "fetch",
                 &format!("https://github.com/{DEFAULT_UPSTREAM_REPO}"),
@@ -326,7 +326,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
 
         // And push it to the user's fork's branch
         run_command_at(
-            &[
+            [
                 "git",
                 "push",
                 &user_upstream_url,
@@ -341,13 +341,13 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         // Do the actual push from the subtree git repo
         println!("Pushing changes...");
         run_command(
-            &["git", "push", &josh_url, &format!("HEAD:{branch}")],
+            ["git", "push", &josh_url, &format!("HEAD:{branch}")],
             self.verbose,
         )?;
         println!();
 
         // Do a round-trip check to make sure the push worked as expected.
-        self.roundtrip_check(&self.context.config, &josh_url, &branch)?;
+        self.roundtrip_check(&self.context.config, &josh_url, branch)?;
         println!("{NO_REBASE_WARN}");
 
         Ok(())
@@ -355,7 +355,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
 
     fn has_empty_diff(&self, baseline_sha: &str) -> bool {
         // `git diff --exit-code` "succeeds" if the diff is empty.
-        run_command(&["git", "diff", "--exit-code", baseline_sha], self.verbose).is_ok()
+        run_command(["git", "diff", "--exit-code", baseline_sha], self.verbose).is_ok()
     }
 
     fn run_post_pull_op(&self, op: &PostPullOperation) -> anyhow::Result<()> {
@@ -381,23 +381,23 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         branch: &str,
     ) -> anyhow::Result<()> {
         run_command_at(
-            &["git", "fetch", josh_url, branch],
+            ["git", "fetch", josh_url, branch],
             &std::env::current_dir().unwrap(),
             self.verbose,
         )?;
         let head = if let Some(subtree_filter) = &config.subtree_filter {
             let josh_filter = get_josh_filter(self.verbose)?;
             josh_filter.run(
-                &[subtree_filter, "HEAD"],
+                [subtree_filter, "HEAD"],
                 &std::env::current_dir().unwrap(),
                 self.verbose,
             )?;
-            run_command(&["git", "rev-parse", "FILTERED_HEAD"], self.verbose)
+            run_command(["git", "rev-parse", "FILTERED_HEAD"], self.verbose)
                 .context("failed to get FILTERED_HEAD")?
         } else {
             get_current_head_sha(self.verbose)?
         };
-        let fetch_head = run_command(&["git", "rev-parse", "FETCH_HEAD"], self.verbose)?;
+        let fetch_head = run_command(["git", "rev-parse", "FETCH_HEAD"], self.verbose)?;
         if head != fetch_head {
             return Err(anyhow::anyhow!(
                 "Josh created a non-roundtrip push! Do NOT merge this into rustc!\n\
@@ -447,7 +447,7 @@ fn prepare_rustc_checkout(verbose: bool) -> anyhow::Result<PathBuf> {
             );
             // Stream stdout/stderr to the terminal, so that the user sees clone progress
             stream_command(
-                &[
+                [
                     "git",
                     "clone",
                     "--filter=blob:none",
@@ -489,8 +489,8 @@ impl Drop for GitResetOnDrop {
     fn drop(&mut self) {
         if !self.disarmed {
             eprintln!("Reverting HEAD to {}", self.reset_to);
-            run_command(&["git", "reset", "--hard", &self.reset_to], self.verbose)
-                .expect(&format!("cannot reset current branch to {}", self.reset_to));
+            run_command(["git", "reset", "--hard", &self.reset_to], self.verbose)
+                .unwrap_or_else(|_| panic!("cannot reset current branch to {}", self.reset_to));
         }
     }
 }

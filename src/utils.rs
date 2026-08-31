@@ -103,7 +103,7 @@ pub fn ensure_clean_git_state(verbose: bool) -> anyhow::Result<()> {
 }
 
 pub fn get_current_head_sha(verbose: bool) -> anyhow::Result<String> {
-    run_command(&["git", "rev-parse", "HEAD"], verbose).context("failed to get current commit")
+    run_command(["git", "rev-parse", "HEAD"], verbose).context("failed to get current commit")
 }
 
 /// Ask a prompt to user and return true if they responded with `y`.
