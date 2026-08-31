@@ -7,8 +7,6 @@ use crate::utils::{run_command, stream_command};
 use anyhow::{Context, Error};
 use std::path::{Path, PathBuf};
 
-pub const DEFAULT_UPSTREAM_REPO: &str = "vivoblueos/blueos";
-
 const NO_REBASE_WARN: &str = "Do NOT amend/squash/rebase any of the commits produced by this tool; that can badly break future syncs.";
 
 pub enum BlueosPullError {
@@ -60,6 +58,7 @@ impl GitSync {
     pub fn blueos_pull(
         &self,
         upstream_repo: String,
+        upstream_branch: String,
         upstream_commit: Option<String>,
         allow_noop: bool,
     ) -> Result<PullResult, BlueosPullError> {
@@ -72,7 +71,7 @@ impl GitSync {
                     "git",
                     "ls-remote",
                     &format!("https://github.com/{upstream_repo}"),
-                    "HEAD",
+                    &format!("refs/heads/{upstream_branch}"),
                 ],
                 self.verbose,
             )
@@ -80,7 +79,9 @@ impl GitSync {
             out.split_whitespace()
                 .next()
                 .unwrap_or_else(|| {
-                    panic!("Could not obtain BlueOS monorepo HEAD from remote: '{out}'")
+                    panic!(
+                        "Could not obtain BlueOS monorepo branch `{upstream_branch}` from remote: '{out}'"
+                    )
                 })
                 .to_owned()
         };
@@ -192,9 +193,9 @@ Pull recent changes from https://github.com/{upstream_repo} via Josh.
 
 Upstream ref: {upstream_repo}@{upstream_sha}
 Filtered ref: {sub_org}/{sub_repo}@{incoming_ref}
-Upstream diff: https://github.com/{DEFAULT_UPSTREAM_REPO}/compare/{prev_upstream_sha}...{upstream_sha}
+Upstream diff: https://github.com/{upstream_repo}/compare/{prev_upstream_sha}...{upstream_sha}
 
-This merge was created using https://github.com/vivoblueos/josh-sync.
+This merge was created using vivoblueos-josh-sync.
 "#,
             upstream_head_short = &upstream_sha[..12],
             sub_org = self.context.config.org,
@@ -279,6 +280,8 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         ensure_clean_git_state(self.verbose)?;
 
         let base_upstream_sha = self.context.last_upstream_sha.clone().unwrap_or_default();
+        let upstream_repo = &self.context.config.upstream_repo;
+        let fork_repo = format!("{username}/{}", self.context.config.upstream_repo_name()?);
 
         // Make sure josh is running.
         let josh = self
@@ -286,13 +289,13 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
             .start(&self.context.config)
             .context("cannot start josh-proxy")?;
         let josh_url = josh.git_url(
-            &format!("{username}/blueos"),
+            &fork_repo,
             None,
             &construct_josh_filter(&self.context.config),
         );
-        let user_upstream_url = format!("https://github.com/{username}/blueos");
+        let user_upstream_url = format!("https://github.com/{fork_repo}");
 
-        let blueos_git = prepare_blueos_checkout(self.verbose)
+        let blueos_git = prepare_blueos_checkout(upstream_repo, self.verbose)
             .context("cannot prepare BlueOS monorepo checkout")?;
 
         // Prepare the branch. Pushing works much better if we use as base exactly
@@ -318,7 +321,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
             [
                 "git",
                 "fetch",
-                &format!("https://github.com/{DEFAULT_UPSTREAM_REPO}"),
+                &format!("https://github.com/{upstream_repo}"),
                 &base_upstream_sha,
             ],
             &blueos_git,
@@ -424,7 +427,7 @@ fn get_josh_filter(verbose: bool) -> anyhow::Result<JoshFilter> {
 }
 
 /// Find a BlueOS monorepo we can do our push preparation in.
-fn prepare_blueos_checkout(verbose: bool) -> anyhow::Result<PathBuf> {
+fn prepare_blueos_checkout(upstream_repo: &str, verbose: bool) -> anyhow::Result<PathBuf> {
     if let Ok(blueos_git) = std::env::var("BLUEOS_GIT") {
         let blueos_git = PathBuf::from(blueos_git);
         assert!(
@@ -453,7 +456,7 @@ fn prepare_blueos_checkout(verbose: bool) -> anyhow::Result<PathBuf> {
                     "git",
                     "clone",
                     "--filter=blob:none",
-                    &format!("https://github.com/{DEFAULT_UPSTREAM_REPO}"),
+                    &format!("https://github.com/{upstream_repo}"),
                     path,
                 ],
                 verbose,
