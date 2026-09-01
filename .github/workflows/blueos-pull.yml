@@ -75,7 +75,7 @@ jobs:
 
       - name: Install vivoblueos-josh-sync
         run: |
-          cargo install --locked \
+          cargo +stable install --locked \
             --git "https://github.com/${{ inputs.josh-sync-repository }}" \
             --rev "${{ inputs.josh-sync-revision }}"
 
