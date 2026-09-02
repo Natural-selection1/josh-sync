@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use vivoblueos_josh_sync::SyncContext;
 use vivoblueos_josh_sync::config::{JoshConfig, load_config};
 use vivoblueos_josh_sync::josh::{JoshProxy, try_install_josh_proxy};
-use vivoblueos_josh_sync::sync::{BlueosPullError, FilterVersion, GitSync};
+use vivoblueos_josh_sync::sync::{BlueosPullError, FilterVersion, GitSync, NO_REBASE_WARN};
 use vivoblueos_josh_sync::utils::{get_current_head_sha, prompt};
 
 const DEFAULT_CONFIG_PATH: &str = "josh-sync.toml";
@@ -181,9 +181,10 @@ fn main() -> anyhow::Result<()> {
 
 Created using vivoblueos-josh-sync.
 
-r? @ghost"#,
+{warning}"#,
                 repo = ctx.config.repo,
                 full_repo = ctx.config.full_repo_name(),
+                warning = NO_REBASE_WARN
             );
 
             println!(
