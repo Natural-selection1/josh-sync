@@ -1,11 +1,11 @@
 use anyhow::Context;
 use clap::Parser;
+use josh_sync::SyncContext;
+use josh_sync::config::{JoshConfig, load_config};
+use josh_sync::josh::{JoshProxy, try_install_josh_proxy};
+use josh_sync::sync::{BlueosPullError, FilterVersion, GitSync};
+use josh_sync::utils::{get_current_head_sha, prompt};
 use std::path::{Path, PathBuf};
-use vivoblueos_josh_sync::SyncContext;
-use vivoblueos_josh_sync::config::{JoshConfig, load_config};
-use vivoblueos_josh_sync::josh::{JoshProxy, try_install_josh_proxy};
-use vivoblueos_josh_sync::sync::{BlueosPullError, FilterVersion, GitSync};
-use vivoblueos_josh_sync::utils::{get_current_head_sha, prompt};
 
 const DEFAULT_CONFIG_PATH: &str = "josh-sync.toml";
 const DEFAULT_BLUEOS_VERSION_PATH: &str = "blueos-version";

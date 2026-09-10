@@ -1,21 +1,17 @@
 [package]
-name = "vivoblueos-josh-sync"
+name = "josh-sync"
 version = "0.1.0"
 edition = "2024"
-
-[[bin]]
-path = "src/bin/vivoblueos_josh_sync.rs"
-name = "vivoblueos-josh-sync"
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
-toml = "0.8"
+regex = "1.12.3"
 serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 urlencoding = "2"
 which = "8"
-regex = "1.12.3"
 
 [profile.release]
 debug = "line-tables-only"
