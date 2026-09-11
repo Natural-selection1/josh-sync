@@ -3,10 +3,13 @@ use std::path::Path;
 use anyhow::Context as _;
 
 use crate::{
-    DEFAULT_BLUEOS_VERSION_PATH, DEFAULT_CONFIG_PATH, config::JoshConfig, sync::FilterVersion,
+    DEFAULT_CONFIG_PATH, DEFAULT_METADATA_DIR, DEFAULT_SYNC_VERSION_PATH, config::JoshConfig,
+    sync::FilterVersion,
 };
 
 pub fn handle_init() -> Result<(), anyhow::Error> {
+    std::fs::create_dir_all(DEFAULT_METADATA_DIR).context("cannot create .josh-sync directory")?;
+
     let config = JoshConfig {
         org: "vivoblueos".to_string(),
         repo: "<repository-name>".to_string(),
@@ -22,14 +25,14 @@ pub fn handle_init() -> Result<(), anyhow::Error> {
         .write(Path::new(DEFAULT_CONFIG_PATH))
         .context("cannot write config")?;
     println!("Created config file at {DEFAULT_CONFIG_PATH}");
-    match !Path::new(DEFAULT_BLUEOS_VERSION_PATH).is_file() {
+    match !Path::new(DEFAULT_SYNC_VERSION_PATH).is_file() {
         true => {
-            std::fs::write(DEFAULT_BLUEOS_VERSION_PATH, "")
-                .context("cannot write blueos-version file")?;
-            println!("Created empty blueos-version file at {DEFAULT_BLUEOS_VERSION_PATH}");
+            std::fs::write(DEFAULT_SYNC_VERSION_PATH, "")
+                .context("cannot write sync-version file")?;
+            println!("Created empty sync-version file at {DEFAULT_SYNC_VERSION_PATH}");
         }
         false => {
-            println!("{DEFAULT_BLUEOS_VERSION_PATH} already exists, not doing anything with it")
+            println!("{DEFAULT_SYNC_VERSION_PATH} already exists, not doing anything with it")
         }
     }
 

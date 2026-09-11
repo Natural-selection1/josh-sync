@@ -180,7 +180,8 @@ round-trip 该在哪里做?
 
 ## `josh-sync init`
 
-生成 `josh-sync.toml`, 以及可能存在的 sync-version (仅 --role subrepo 时)
+生成 `.josh-sync/josh-sync.toml`，以及可能存在的
+`.josh-sync/sync-version`（仅 `--role subrepo` 时）
 
 (文件中是填充好参考内容和注释的)
 (同时还要支持 通过cli初始化时就填充好数据)
@@ -192,7 +193,8 @@ round-trip 该在哪里做?
 
 ## `josh-sync pull`
 
-从别人那里获取同步, 需要根据 josh-sync.toml 中的 role 进行行为上的细分
+从别人那里获取同步，需要根据 `.josh-sync/josh-sync.toml` 中的 role
+进行行为上的细分
 
 任意local, fork, upstream都应该可以从任意local, fork, upstream拉取
 
@@ -204,9 +206,9 @@ round-trip 该在哪里做?
 
 由 clap 管理
 
-# josh-sync.toml 设计
+# `.josh-sync/josh-sync.toml` 设计
 
-monorepo 还是 subrepo，都使用 `josh-sync.toml` 作为配置，
+monorepo 还是 subrepo，都使用 `.josh-sync/josh-sync.toml` 作为配置，
 并使用同一套字段和同一个解析入口。`role` 只用于决定配置约束和
 `pull` 时的同步方向，不维护两套独立的配置 schema。
 
@@ -254,13 +256,17 @@ role 相关约束：
 而是协议的一部分：
 
 ```text
-subrepo view 中: <repo-root>/sync-version
+subrepo view 中: <repo-root>/.josh-sync/sync-version
 ```
 
-对于 subrepo，这就是工作树根目录下的 `sync-version`。对于
+对于 subrepo，这就是工作树中的 `.josh-sync/sync-version`。对于
 monorepo，不假定它在原始树中对应某个可直接推导的物理路径；
 工具应当对 monorepo commit 应用 canonical filter，然后从产生的
-subrepo view 根目录读取它。
+subrepo view 的 `.josh-sync/sync-version` 读取它。
+
+`.josh-sync/` 是受版本控制的协议元数据目录，不得加入 `.gitignore`。
+配置文件和 version 文件均置于其中，其他功能需要新增元数据文件时也应
+优先复用该目录，避免继续占用仓库根目录。
 
 以上字段足以完成同步引擎的核心功能：确定两个仓库、源和目标分支、
 双向历史映射、`sync-version` 位置，以及创建 PR 时所需的 forge

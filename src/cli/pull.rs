@@ -12,7 +12,7 @@ pub fn handle_pull(
     allow_noop: bool,
     shared: SharedArgs,
 ) -> Result<(), anyhow::Error> {
-    let ctx = load_context(&shared.config_path, &shared.blueos_version_path)?;
+    let ctx = load_context(&shared.config_path, &shared.sync_version_path)?;
     let josh = get_josh_proxy(shared.josh_proxy, shared.verbose)?;
     let sync = GitSync::new(ctx.clone(), josh, shared.verbose);
     let upstream_repo = upstream_repo.unwrap_or_else(|| ctx.config.upstream_repo.clone());

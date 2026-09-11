@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{DEFAULT_BLUEOS_VERSION_PATH, DEFAULT_CONFIG_PATH};
+use crate::{DEFAULT_CONFIG_PATH, DEFAULT_SYNC_VERSION_PATH};
 
 #[derive(clap::Parser)]
 pub struct Args {
@@ -10,9 +10,9 @@ pub struct Args {
 
 #[derive(clap::Parser)]
 pub enum Command {
-    /// Initialize a config file and an empty `blueos-version` file for this repository.
+    /// Initialize `.josh-sync/josh-sync.toml` and `.josh-sync/sync-version`.
     Init,
-    /// Pull changes from the BlueOS monorepo configured in `josh-sync.toml`.
+    /// Pull changes from the BlueOS monorepo configured in `.josh-sync/josh-sync.toml`.
     /// This creates new commits that should be then merged into this subtree repository.
     Pull {
         /// Override the configured upstream repository for a local experiment.
@@ -60,8 +60,8 @@ pub struct SharedArgs {
     pub config_path: PathBuf,
 
     /// Path to a file storing the last synchronized BlueOS monorepo commit.
-    #[clap(long, default_value(DEFAULT_BLUEOS_VERSION_PATH))]
-    pub blueos_version_path: PathBuf,
+    #[clap(long, default_value(DEFAULT_SYNC_VERSION_PATH))]
+    pub sync_version_path: PathBuf,
 
     /// Path to the josh-proxy binary to be used.
     /// If not specified, it will be installed automatically.

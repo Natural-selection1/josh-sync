@@ -13,7 +13,7 @@ $ cargo install --locked \
 
 ## Creating config file
 
-First, create a configuration file for a given subtree repo using `vivoblueos-josh-sync init`. The config will be created under the path `josh-sync.toml`. It is tracked in the subtree repository, so the monorepo source is reviewed together with the mapping.
+First, create a configuration file for a given subtree repo using `vivoblueos-josh-sync init`. The config will be created at `.josh-sync/josh-sync.toml`. It is tracked in the subtree repository, so the monorepo source is reviewed together with the mapping.
 
 For a Natural-selection1 trial, a kernel mapping looks like this:
 
@@ -30,7 +30,7 @@ For production, change the reviewed `upstream-repo` to `vivoblueos/blueos` (and 
 
 If you need to specify a more complex Josh `filter`, use `filter` field in the configuration file instead of the `path` field.
 
-The `init` command will also create an empty `blueos-version` file (if it doesn't already exist) that stores the last configured monorepo SHA that was synced in the subtree.
+The `init` command also creates `.josh-sync/sync-version` (if it doesn't already exist), which stores the last configured monorepo SHA synced into the subtree. The `.josh-sync/` directory and both files are repository metadata and must be tracked by Git.
 
 ### Repository mapping examples
 
@@ -48,7 +48,7 @@ repo = "apps_shell"
 path = "apps/shell"
 ```
 
-`upstream-branch` selects the monorepo branch. A subtree with a default branch other than `main` does not need a special `josh-sync.toml` setting; configure its PR base only in the CI workflow that consumes this tool:
+`upstream-branch` selects the monorepo branch. A subtree with a default branch other than `main` does not need a special `.josh-sync/josh-sync.toml` setting; configure its PR base only in the CI workflow that consumes this tool:
 
 ```yaml
 pr-base-branch: blueos-dev

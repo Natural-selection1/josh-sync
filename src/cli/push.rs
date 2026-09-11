@@ -12,7 +12,7 @@ pub fn handle_push(
     username: String,
     shared: SharedArgs,
 ) -> Result<(), anyhow::Error> {
-    let ctx = load_context(&shared.config_path, &shared.blueos_version_path)?;
+    let ctx = load_context(&shared.config_path, &shared.sync_version_path)?;
     let josh = get_josh_proxy(shared.josh_proxy, shared.verbose)?;
     let sync = GitSync::new(ctx.clone(), josh, shared.verbose);
     if let Err(error) = sync

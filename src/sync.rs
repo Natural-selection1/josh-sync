@@ -135,7 +135,7 @@ impl GitSync {
         // the merge has confused the heck out of josh in the past.
         // We pass `--no-verify` to avoid running git hooks.
         // We do this before the merge so that if there are merge conflicts, we have
-        // the right blueos-version file while resolving them.
+        // the right sync-version file while resolving them.
         std::fs::write(
             &self.context.last_upstream_sha_path,
             format!("{upstream_sha}\n"),
@@ -150,22 +150,22 @@ impl GitSync {
         let prep_message = format!(
             r#"Prepare for merging from {upstream_repo}
 
-This updates the blueos-version file to {upstream_sha}."#,
+This updates the sync-version file to {upstream_sha}."#,
         );
 
-        let blueos_version_path = self
+        let sync_version_path = self
             .context
             .last_upstream_sha_path
             .to_string_lossy()
             .to_string();
         // Add the file to git index, in case this is the first time we perform the sync
         // Otherwise `git commit <file>` below wouldn't work.
-        run_command(["git", "add", &blueos_version_path], self.verbose)?;
+        run_command(["git", "add", &sync_version_path], self.verbose)?;
         run_command(
             [
                 "git",
                 "commit",
-                &blueos_version_path,
+                &sync_version_path,
                 "--no-verify",
                 "-m",
                 &prep_message,
@@ -308,7 +308,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
             .context("cannot prepare BlueOS monorepo checkout")?;
 
         // Prepare the branch. Pushing works much better if we use as base exactly
-        // the commit that we pulled from last time, so we use the `blueos-version`
+        // the commit that we pulled from last time, so we use the `sync-version`
         // file to find out which commit that would be.
         println!("Preparing {user_upstream_url} (base: {base_upstream_sha})...");
 
@@ -480,18 +480,18 @@ fn prepare_blueos_checkout(upstream_repo: &str, verbose: bool) -> anyhow::Result
     Ok(PathBuf::from(path))
 }
 
-pub fn load_context(config_path: &Path, blueos_version_path: &Path) -> anyhow::Result<SyncContext> {
+pub fn load_context(config_path: &Path, sync_version_path: &Path) -> anyhow::Result<SyncContext> {
     let config = load_config(config_path)
         .context("cannot load config. Run the `init` command to initialize it.")?;
-    let blueos_version = std::fs::read_to_string(blueos_version_path)
-        .inspect_err(|err| eprintln!("Cannot load blueos-version file: {err:?}"))
+    let sync_version = std::fs::read_to_string(sync_version_path)
+        .inspect_err(|err| eprintln!("Cannot load sync-version file: {err:?}"))
         .map(|version| version.trim().to_string())
         .map(Some)
         .unwrap_or_default();
     Ok(SyncContext {
         config,
-        last_upstream_sha_path: blueos_version_path.to_path_buf(),
-        last_upstream_sha: blueos_version,
+        last_upstream_sha_path: sync_version_path.to_path_buf(),
+        last_upstream_sha: sync_version,
     })
 }
 

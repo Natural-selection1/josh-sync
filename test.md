@@ -1,7 +1,7 @@
 # Trial test guide
 
 This repository supports two environments without changing the synchronizer code. The selected
-environment is part of the tracked `josh-sync.toml` in each subtree repository.
+environment is part of the tracked `.josh-sync/josh-sync.toml` in each subtree repository.
 
 ## Trial configuration
 
@@ -26,12 +26,12 @@ org = "vivoblueos"
 upstream-repo = "vivoblueos/blueos"
 ```
 
-Do not reuse a trial `blueos-version` value in production; bootstrap a new baseline from a
+Do not reuse a trial `.josh-sync/sync-version` value in production; bootstrap a new baseline from a
 confirmed equal tree in the production repositories.
 
 ## Local trial sequence
 
-1. Create the tracked mapping and `blueos-version` through ordinary PRs in the subtree and the
+1. Create the tracked mapping and `.josh-sync/sync-version` through ordinary PRs in the subtree and the
    corresponding monorepo path. Confirm the two trees have the same hash before writing the
    baseline.
 2. On a throwaway subtree branch, run `vivoblueos-josh-sync pull --upstream-commit <trial-sha>`.
