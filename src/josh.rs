@@ -155,6 +155,18 @@ fn try_install_josh_program(program: JoshProgram, verbose: bool) -> Option<PathB
     if path.is_file() { Some(path) } else { None }
 }
 
+pub fn get_josh_proxy(proxy_path: Option<PathBuf>, verbose: bool) -> anyhow::Result<JoshProxy> {
+    match proxy_path {
+        Some(path) => {
+            println!("Using josh-proxy binary from {}", path.display());
+            Ok(JoshProxy::from_path(path))
+        }
+        None => match try_install_josh_proxy(verbose) {
+            Some(proxy) => Ok(proxy),
+            None => Err(anyhow::anyhow!("Could not install josh-proxy")),
+        },
+    }
+}
 /// Create a wrapper that represents a running instance of `josh-proxy` and stops it on drop.
 pub struct RunningJoshProxy {
     process: std::process::Child,

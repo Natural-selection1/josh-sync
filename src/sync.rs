@@ -1,5 +1,4 @@
-use crate::SyncContext;
-use crate::config::{JoshConfig, PostPullOperation};
+use crate::config::{JoshConfig, PostPullOperation, load_config};
 use crate::josh::{JoshFilter, JoshProxy, try_install_josh_filter};
 use crate::utils::{ensure_clean_git_state, prompt};
 use crate::utils::{get_current_head_sha, run_command_at};
@@ -38,6 +37,16 @@ impl FilterVersion {
 
 pub struct PullResult {
     pub merge_commit_message: String,
+}
+
+#[derive(Clone)]
+pub struct SyncContext {
+    pub config: JoshConfig,
+    /// The last synced upstream SHA, which should be present
+    /// if a pull was already performed at least once.
+    pub last_upstream_sha: Option<String>,
+    /// Path to a file that stores the last synced upstream SHA.
+    pub last_upstream_sha_path: PathBuf,
 }
 
 pub struct GitSync {
@@ -469,6 +478,21 @@ fn prepare_blueos_checkout(upstream_repo: &str, verbose: bool) -> anyhow::Result
         }
     }
     Ok(PathBuf::from(path))
+}
+
+pub fn load_context(config_path: &Path, blueos_version_path: &Path) -> anyhow::Result<SyncContext> {
+    let config = load_config(config_path)
+        .context("cannot load config. Run the `init` command to initialize it.")?;
+    let blueos_version = std::fs::read_to_string(blueos_version_path)
+        .inspect_err(|err| eprintln!("Cannot load blueos-version file: {err:?}"))
+        .map(|version| version.trim().to_string())
+        .map(Some)
+        .unwrap_or_default();
+    Ok(SyncContext {
+        config,
+        last_upstream_sha_path: blueos_version_path.to_path_buf(),
+        last_upstream_sha: blueos_version,
+    })
 }
 
 /// Restores HEAD to `reset_to` on drop, unless `disarm` is called first.

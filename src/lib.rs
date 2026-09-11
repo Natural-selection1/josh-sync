@@ -1,17 +1,13 @@
-use crate::config::JoshConfig;
-use std::path::PathBuf;
+pub const DEFAULT_CONFIG_PATH: &str = "josh-sync.toml";
+pub const DEFAULT_BLUEOS_VERSION_PATH: &str = "blueos-version";
 
+pub mod cli {
+    pub mod init;
+    pub mod parser;
+    pub mod pull;
+    pub mod push;
+}
 pub mod config;
 pub mod josh;
 pub mod sync;
 pub mod utils;
-
-#[derive(Clone)]
-pub struct SyncContext {
-    pub config: JoshConfig,
-    /// The last synced upstream SHA, which should be present
-    /// if a pull was already performed at least once.
-    pub last_upstream_sha: Option<String>,
-    /// Path to a file that stores the last synced upstream SHA.
-    pub last_upstream_sha_path: PathBuf,
-}

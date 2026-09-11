@@ -134,3 +134,29 @@ pub fn is_null_sha(s: &str) -> bool {
     let s = s.trim();
     !s.is_empty() && s.chars().all(|c| c == '0')
 }
+
+pub fn maybe_create_gh_pr(repo: &str, title: &str, description: &str) -> anyhow::Result<bool> {
+    if which::which("gh").is_ok()
+        && prompt(
+            &format!("Do you want to create a {repo} pull PR using the `gh` tool?"),
+            false,
+        )
+    {
+        std::process::Command::new("gh")
+            .args([
+                "pr",
+                "create",
+                "--title",
+                title,
+                "--body",
+                description,
+                "--repo",
+                repo,
+            ])
+            .spawn()?
+            .wait()?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
