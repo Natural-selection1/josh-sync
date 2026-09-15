@@ -122,6 +122,43 @@ jobs:
 
 You will need to have a GitHub app configured on the repository with permissions to create pull requests in order to use the workflow.
 
+## Automating pushes on CI
+
+The reusable `blueos-push.yml` workflow pushes the caller's default-branch state into a stable,
+CI-owned branch in the configured BlueOS monorepo. It creates a monorepo pull request or updates
+the existing pull request for that exact head and base branch. If the full filtered trees already
+match, including `blueos-version`, the workflow succeeds without changing the branch or PR.
+
+```yaml
+name: blueos-push
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: blueos-push-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  push:
+    uses: vivoblueos-lab/josh-sync/.github/workflows/blueos-push.yml@<josh-sync-commit>
+    with:
+      github-app-client-id: ${{ vars.APP_CLIENT_ID }}
+      josh-sync-repository: vivoblueos-lab/josh-sync
+      josh-sync-revision: <josh-sync-commit>
+    secrets:
+      github-app-secret: ${{ secrets.APP_PRIVATE_KEY }}
+```
+
+The GitHub App must be installed on the configured monorepo with repository contents and pull
+request write permissions. The default sync branch is
+`github.com/<subrepo-owner>/<subrepo>/josh-sync`. Only this workflow may update that branch.
+
+The generated monorepo pull request must be merged with a merge commit. Do not amend, squash, or
+rebase commits produced by the sync tool.
+
 See [test.md](test.md) for the Natural-selection1 trial sequence and the production migration boundary.
 
 ## Git peculiarities

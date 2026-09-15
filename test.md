@@ -63,5 +63,6 @@ jobs:
       github-app-secret: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-Keep Rust's operational boundary: this workflow automates only monorepo-to-subtree pulls. The
-subtree-to-monorepo command remains a maintainer-operated operation that creates a normal PR.
+Enable the reusable push workflow for one subtree at a time. The first production pilot is
+`kernel`; verify no-op handling, force-with-lease recovery, and exact PR reuse before enabling the
+same caller workflow in the remaining component repositories.

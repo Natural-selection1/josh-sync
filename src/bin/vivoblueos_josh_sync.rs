@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use vivoblueos_josh_sync::SyncContext;
 use vivoblueos_josh_sync::config::{JoshConfig, load_config};
 use vivoblueos_josh_sync::josh::{JoshProxy, try_install_josh_proxy};
-use vivoblueos_josh_sync::sync::{BlueosPullError, FilterVersion, GitSync, NO_REBASE_WARN};
+use vivoblueos_josh_sync::sync::{
+    BlueosPullError, BlueosPushError, FilterVersion, GitSync, NO_REBASE_WARN,
+};
 use vivoblueos_josh_sync::utils::{get_current_head_sha, prompt};
 
 const DEFAULT_CONFIG_PATH: &str = "josh-sync.toml";
@@ -56,6 +58,11 @@ enum Command {
 
         /// Your GitHub usename where the fork is located
         username: String,
+
+        /// Replace an existing sync branch using force-with-lease.
+        /// This is intended for a CI-owned branch.
+        #[clap(long)]
+        update_existing: bool,
         #[clap(flatten)]
         shared: SharedArgs,
     },
@@ -157,19 +164,24 @@ fn main() -> anyhow::Result<()> {
         Command::Push {
             username,
             branch,
+            update_existing,
             shared,
         } => {
             let ctx = load_context(&shared.config_path, &shared.blueos_version_path)?;
             let josh = get_josh_proxy(shared.josh_proxy, shared.verbose)?;
             let sync = GitSync::new(ctx.clone(), josh, shared.verbose);
-            if let Err(error) = sync
-                .blueos_push(&username, &branch)
-                .context("cannot perform push")
-            {
-                if !shared.verbose {
-                    eprintln!("Rerun with `-v` to see executed commands");
+            match sync.blueos_push(&username, &branch, update_existing) {
+                Ok(()) => {}
+                Err(BlueosPushError::NothingToPush) => {
+                    eprintln!("Nothing to push");
+                    std::process::exit(2);
                 }
-                return Err(error);
+                Err(BlueosPushError::PushFailed(error)) => {
+                    if !shared.verbose {
+                        eprintln!("Rerun with `-v` to see executed commands");
+                    }
+                    return Err(error).context("cannot perform push");
+                }
             }
 
             // Open PR with `subtree update` title to silence the `no-merges` triagebot check

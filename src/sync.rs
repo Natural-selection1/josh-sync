@@ -6,6 +6,7 @@ use crate::utils::{get_current_head_sha, run_command_at};
 use crate::utils::{run_command, stream_command};
 use anyhow::{Context, Error};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub const NO_REBASE_WARN: &str = "Do NOT amend/squash/rebase any of the commits produced by this tool; that can badly break future syncs.";
 
@@ -19,6 +20,19 @@ pub enum BlueosPullError {
 impl From<anyhow::Error> for BlueosPullError {
     fn from(error: Error) -> Self {
         Self::PullFailed(error)
+    }
+}
+
+pub enum BlueosPushError {
+    /// The subtree projection already matches the configured monorepo branch.
+    NothingToPush,
+    /// A reverse synchronization operation failed.
+    PushFailed(anyhow::Error),
+}
+
+impl From<anyhow::Error> for BlueosPushError {
+    fn from(error: Error) -> Self {
+        Self::PushFailed(error)
     }
 }
 
@@ -91,7 +105,7 @@ impl GitSync {
         // Make sure josh is running.
         let josh = self
             .proxy
-            .start(&self.context.config)
+            .start(&self.context.config, false)
             .context("cannot start josh-proxy")?;
         let josh_url = josh.git_url(
             &upstream_repo,
@@ -276,24 +290,62 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         })
     }
 
-    pub fn blueos_push(&self, username: &str, branch: &str) -> anyhow::Result<()> {
+    pub fn blueos_push(
+        &self,
+        username: &str,
+        branch: &str,
+        update_existing: bool,
+    ) -> Result<(), BlueosPushError> {
         ensure_clean_git_state(self.verbose)?;
 
-        let base_upstream_sha = self.context.last_upstream_sha.clone().unwrap_or_default();
+        let base_upstream_sha = self
+            .context
+            .last_upstream_sha
+            .clone()
+            .filter(|sha| !sha.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("blueos-version does not contain an upstream SHA"))?;
         let upstream_repo = &self.context.config.upstream_repo;
         let fork_repo = format!("{username}/{}", self.context.config.upstream_repo_name()?);
 
-        // Make sure josh is running.
+        // Pushes to public GitHub repositories still need the downstream client to provide
+        // credentials, so require authentication on the local proxy.
         let josh = self
             .proxy
-            .start(&self.context.config)
+            .start(&self.context.config, true)
             .context("cannot start josh-proxy")?;
-        let josh_url = josh.git_url(
-            &fork_repo,
-            None,
-            &construct_josh_filter(&self.context.config),
-        );
+        let filter = construct_josh_filter(&self.context.config);
+        let josh_url = josh.git_url(&fork_repo, None, &filter);
         let user_upstream_url = format!("https://github.com/{fork_repo}");
+        let current_dir = std::env::current_dir().context("cannot determine current directory")?;
+        let existing_branch =
+            resolve_remote_branch(&user_upstream_url, branch, &current_dir, self.verbose)?;
+        ensure_branch_update_allowed(
+            existing_branch.as_deref(),
+            update_existing,
+            branch,
+            &user_upstream_url,
+        )?;
+
+        let upstream_sha = resolve_remote_branch(
+            &format!("https://github.com/{upstream_repo}"),
+            &self.context.config.upstream_branch,
+            &current_dir,
+            self.verbose,
+        )?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "configured upstream branch '{}/{}' does not exist",
+                upstream_repo,
+                self.context.config.upstream_branch
+            )
+        })?;
+        let upstream_josh_url = josh.git_url(upstream_repo, Some(&upstream_sha), &filter);
+        run_command(["git", "fetch", &upstream_josh_url], self.verbose)
+            .context("cannot fetch the current upstream subtree through Josh")?;
+        let local_head = self.local_roundtrip_head(&self.context.config)?;
+        let upstream_head = run_command(["git", "rev-parse", "FETCH_HEAD"], self.verbose)
+            .context("failed to resolve the current upstream subtree")?;
+        ensure_push_needed(&local_head, &upstream_head, &current_dir, self.verbose)?;
 
         let blueos_git = prepare_blueos_checkout(upstream_repo, self.verbose)
             .context("cannot prepare BlueOS monorepo checkout")?;
@@ -302,19 +354,6 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         // the commit that we pulled from last time, so we use the `blueos-version`
         // file to find out which commit that would be.
         println!("Preparing {user_upstream_url} (base: {base_upstream_sha})...");
-
-        // Check if the remote branch doesn't already exist
-        if run_command_at(
-            ["git", "fetch", &user_upstream_url, branch],
-            &blueos_git,
-            self.verbose,
-        )
-        .is_ok()
-        {
-            return Err(anyhow::anyhow!(
-                "The branch '{branch}' seems to already exist in '{user_upstream_url}'. Please delete it and try again."
-            ));
-        }
 
         // Download the base upstream SHA
         run_command_at(
@@ -330,14 +369,12 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         .context("cannot download latest upstream SHA")?;
 
         // And push it to the user's fork's branch
-        run_command_at(
-            [
-                "git",
-                "push",
-                &user_upstream_url,
-                &format!("{base_upstream_sha}:refs/heads/{branch}"),
-            ],
+        push_base_to_branch(
             &blueos_git,
+            &user_upstream_url,
+            branch,
+            &base_upstream_sha,
+            existing_branch.as_deref(),
             self.verbose,
         )
         .context("cannot push to your fork")?;
@@ -356,6 +393,21 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         println!("{NO_REBASE_WARN}");
 
         Ok(())
+    }
+
+    fn local_roundtrip_head(&self, config: &JoshConfig) -> anyhow::Result<String> {
+        if let Some(subtree_filter) = &config.subtree_filter {
+            let josh_filter = get_josh_filter(self.verbose)?;
+            josh_filter.run(
+                [subtree_filter, "HEAD"],
+                &std::env::current_dir()?,
+                self.verbose,
+            )?;
+            run_command(["git", "rev-parse", "FILTERED_HEAD"], self.verbose)
+                .context("failed to get FILTERED_HEAD")
+        } else {
+            get_current_head_sha(self.verbose)
+        }
     }
 
     fn has_empty_diff(&self, baseline_sha: &str) -> bool {
@@ -390,31 +442,139 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
             &std::env::current_dir().unwrap(),
             self.verbose,
         )?;
-        let head = if let Some(subtree_filter) = &config.subtree_filter {
-            let josh_filter = get_josh_filter(self.verbose)?;
-            josh_filter.run(
-                [subtree_filter, "HEAD"],
-                &std::env::current_dir().unwrap(),
-                self.verbose,
-            )?;
-            run_command(["git", "rev-parse", "FILTERED_HEAD"], self.verbose)
-                .context("failed to get FILTERED_HEAD")?
-        } else {
-            get_current_head_sha(self.verbose)?
-        };
+        let head = self.local_roundtrip_head(config)?;
         let fetch_head = run_command(["git", "rev-parse", "FETCH_HEAD"], self.verbose)?;
-        if head != fetch_head {
-            return Err(anyhow::anyhow!(
-                "Josh created a non-roundtrip push! Do NOT merge this into the BlueOS monorepo!\n\
-                Expected {head}, got {fetch_head}."
-            ));
-        }
+        validate_roundtrip(&head, &fetch_head)?;
         println!(
             "Confirmed that the push round-trips back to {} properly. Please create a BlueOS monorepo PR.",
             self.context.config.repo
         );
         Ok(())
     }
+}
+
+fn resolve_remote_branch(
+    remote: &str,
+    branch: &str,
+    workdir: &Path,
+    verbose: bool,
+) -> anyhow::Result<Option<String>> {
+    let remote_ref = format!("refs/heads/{branch}");
+    let mut command = Command::new("git");
+    command
+        .current_dir(workdir)
+        .args(["ls-remote", "--exit-code", remote, &remote_ref]);
+    if verbose {
+        eprintln!("+ {command:?}");
+    }
+    let output = command.output().context("unable to run git ls-remote")?;
+    parse_remote_branch_output(
+        output.status.code(),
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+        remote,
+        branch,
+    )
+}
+
+fn parse_remote_branch_output(
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+    remote: &str,
+    branch: &str,
+) -> anyhow::Result<Option<String>> {
+    match exit_code {
+        Some(0) => {
+            let sha = stdout
+                .split_whitespace()
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("git ls-remote returned no branch SHA"))?;
+            Ok(Some(sha.to_owned()))
+        }
+        Some(2) => Ok(None),
+        _ => {
+            let stderr = stderr.trim();
+            Err(anyhow::anyhow!(
+                "git ls-remote failed for {remote} branch {branch}: {stderr}"
+            ))
+        }
+    }
+}
+
+fn ensure_branch_update_allowed(
+    existing_sha: Option<&str>,
+    update_existing: bool,
+    branch: &str,
+    remote: &str,
+) -> anyhow::Result<()> {
+    if existing_sha.is_some() && !update_existing {
+        return Err(anyhow::anyhow!(
+            "The branch '{branch}' seems to already exist in '{remote}'. Please delete it and try again."
+        ));
+    }
+    Ok(())
+}
+
+fn push_base_to_branch(
+    workdir: &Path,
+    remote: &str,
+    branch: &str,
+    base: &str,
+    existing_sha: Option<&str>,
+    verbose: bool,
+) -> anyhow::Result<()> {
+    let refspec = format!("{base}:refs/heads/{branch}");
+    if let Some(existing_sha) = existing_sha {
+        let lease = format!("--force-with-lease=refs/heads/{branch}:{existing_sha}");
+        run_command_at(["git", "push", &lease, remote, &refspec], workdir, verbose)?;
+    } else {
+        run_command_at(["git", "push", remote, &refspec], workdir, verbose)?;
+    }
+    Ok(())
+}
+
+fn refs_have_same_tree(
+    left: &str,
+    right: &str,
+    workdir: &Path,
+    verbose: bool,
+) -> anyhow::Result<bool> {
+    let left_tree = run_command_at(
+        ["git", "rev-parse", &format!("{left}^{{tree}}")],
+        workdir,
+        verbose,
+    )
+    .context("failed to resolve local subtree tree")?;
+    let right_tree = run_command_at(
+        ["git", "rev-parse", &format!("{right}^{{tree}}")],
+        workdir,
+        verbose,
+    )
+    .context("failed to resolve upstream subtree tree")?;
+    Ok(left_tree == right_tree)
+}
+
+fn ensure_push_needed(
+    local_head: &str,
+    upstream_head: &str,
+    workdir: &Path,
+    verbose: bool,
+) -> Result<(), BlueosPushError> {
+    if refs_have_same_tree(local_head, upstream_head, workdir, verbose)? {
+        return Err(BlueosPushError::NothingToPush);
+    }
+    Ok(())
+}
+
+fn validate_roundtrip(expected: &str, actual: &str) -> anyhow::Result<()> {
+    if expected != actual {
+        return Err(anyhow::anyhow!(
+            "Josh created a non-roundtrip push! Do NOT merge this into the BlueOS monorepo!\n\
+            Expected {expected}, got {actual}."
+        ));
+    }
+    Ok(())
 }
 
 // This is called only when the `subtree-filter` is set.
@@ -565,6 +725,232 @@ fn wrap_compat(filter: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn git(workdir: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .current_dir(workdir)
+            .args(args)
+            .output()
+            .expect("failed to run git");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+
+    fn test_repository() -> (TempDir, PathBuf, PathBuf) {
+        let temp = TempDir::new().unwrap();
+        let worktree = temp.path().join("worktree");
+        let remote = temp.path().join("remote.git");
+        fs::create_dir(&worktree).unwrap();
+        git(&worktree, &["init", "-q"]);
+        git(&worktree, &["config", "user.name", "CI"]);
+        git(&worktree, &["config", "user.email", "ci@example.com"]);
+        git(
+            temp.path(),
+            &["init", "--bare", "-q", remote.to_str().unwrap()],
+        );
+        (temp, worktree, remote)
+    }
+
+    fn commit_file(worktree: &Path, path: &str, contents: &str, message: &str) -> String {
+        fs::write(worktree.join(path), contents).unwrap();
+        git(worktree, &["add", path]);
+        git(worktree, &["commit", "-qm", message]);
+        git(worktree, &["rev-parse", "HEAD"])
+    }
+
+    #[test]
+    fn resolves_existing_and_missing_remote_branches() {
+        let (_temp, worktree, remote) = test_repository();
+        let head = commit_file(&worktree, "file", "one\n", "one");
+        git(
+            &worktree,
+            &["push", remote.to_str().unwrap(), "HEAD:refs/heads/sync"],
+        );
+
+        assert_eq!(
+            resolve_remote_branch(remote.to_str().unwrap(), "sync", &worktree, false).unwrap(),
+            Some(head)
+        );
+        assert_eq!(
+            resolve_remote_branch(remote.to_str().unwrap(), "missing", &worktree, false).unwrap(),
+            None
+        );
+        assert!(resolve_remote_branch("/does/not/exist", "sync", &worktree, false).is_err());
+    }
+
+    #[test]
+    fn operational_remote_errors_are_not_missing_branches() {
+        let authentication_error = parse_remote_branch_output(
+            Some(128),
+            "",
+            "fatal: Authentication failed",
+            "https://example.invalid/repo",
+            "sync",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(authentication_error.contains("Authentication failed"));
+
+        let network_error = parse_remote_branch_output(
+            Some(128),
+            "",
+            "fatal: Could not resolve host: example.invalid",
+            "https://example.invalid/repo",
+            "sync",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(network_error.contains("Could not resolve host"));
+    }
+
+    #[test]
+    fn existing_branch_requires_explicit_update() {
+        assert!(
+            ensure_branch_update_allowed(Some("0123456789abcdef"), false, "sync", "remote")
+                .is_err()
+        );
+        ensure_branch_update_allowed(Some("0123456789abcdef"), true, "sync", "remote").unwrap();
+        ensure_branch_update_allowed(None, false, "sync", "remote").unwrap();
+    }
+
+    #[test]
+    fn creates_and_updates_remote_branch_with_a_lease() {
+        let (_temp, worktree, remote) = test_repository();
+        let first = commit_file(&worktree, "file", "one\n", "one");
+        let second = commit_file(&worktree, "file", "two\n", "two");
+
+        push_base_to_branch(
+            &worktree,
+            remote.to_str().unwrap(),
+            "sync",
+            &first,
+            None,
+            false,
+        )
+        .unwrap();
+        push_base_to_branch(
+            &worktree,
+            remote.to_str().unwrap(),
+            "sync",
+            &second,
+            Some(&first),
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolve_remote_branch(remote.to_str().unwrap(), "sync", &worktree, false).unwrap(),
+            Some(second)
+        );
+    }
+
+    #[test]
+    fn rejects_a_stale_branch_lease() {
+        let (_temp, worktree, remote) = test_repository();
+        let first = commit_file(&worktree, "file", "one\n", "one");
+        let second = commit_file(&worktree, "file", "two\n", "two");
+        let third = commit_file(&worktree, "file", "three\n", "three");
+        push_base_to_branch(
+            &worktree,
+            remote.to_str().unwrap(),
+            "sync",
+            &first,
+            None,
+            false,
+        )
+        .unwrap();
+        git(
+            &worktree,
+            &[
+                "push",
+                "--force",
+                remote.to_str().unwrap(),
+                &format!("{second}:refs/heads/sync"),
+            ],
+        );
+
+        assert!(
+            push_base_to_branch(
+                &worktree,
+                remote.to_str().unwrap(),
+                "sync",
+                &third,
+                Some(&first),
+                false,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn rerun_recovers_after_the_branch_was_reset_to_the_base() {
+        let (_temp, worktree, remote) = test_repository();
+        let base = commit_file(&worktree, "file", "base\n", "base");
+        let pushed = commit_file(&worktree, "file", "pushed\n", "pushed");
+        let previous = commit_file(&worktree, "file", "previous\n", "previous");
+        let remote = remote.to_str().unwrap();
+
+        push_base_to_branch(&worktree, remote, "sync", &previous, None, false).unwrap();
+        push_base_to_branch(&worktree, remote, "sync", &base, Some(&previous), false).unwrap();
+
+        let observed_base = resolve_remote_branch(remote, "sync", &worktree, false)
+            .unwrap()
+            .unwrap();
+        push_base_to_branch(
+            &worktree,
+            remote,
+            "sync",
+            &base,
+            Some(&observed_base),
+            false,
+        )
+        .unwrap();
+        git(
+            &worktree,
+            &["push", remote, &format!("{pushed}:refs/heads/sync")],
+        );
+
+        assert_eq!(
+            resolve_remote_branch(remote, "sync", &worktree, false).unwrap(),
+            Some(pushed)
+        );
+    }
+
+    #[test]
+    fn tree_comparison_includes_blueos_version() {
+        let (_temp, worktree, _remote) = test_repository();
+        let first = commit_file(&worktree, "file", "same\n", "first");
+        git(
+            worktree.as_path(),
+            &["commit", "--allow-empty", "-qm", "empty"],
+        );
+        let same_tree = git(&worktree, &["rev-parse", "HEAD"]);
+        let version_change =
+            commit_file(&worktree, "blueos-version", "0123456789abcdef\n", "version");
+
+        assert!(refs_have_same_tree(&first, &same_tree, &worktree, false).unwrap());
+        assert!(!refs_have_same_tree(&same_tree, &version_change, &worktree, false).unwrap());
+        assert!(matches!(
+            ensure_push_needed(&first, &same_tree, &worktree, false),
+            Err(BlueosPushError::NothingToPush)
+        ));
+        assert!(ensure_push_needed(&same_tree, &version_change, &worktree, false).is_ok());
+    }
+
+    #[test]
+    fn rejects_a_non_roundtrip_push() {
+        assert!(validate_roundtrip("expected", "expected").is_ok());
+        let error = validate_roundtrip("expected", "actual")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Expected expected, got actual"));
+    }
 
     #[test]
     fn no_rev_block_unchanged() {

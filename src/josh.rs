@@ -19,7 +19,11 @@ impl JoshProxy {
         Self { path }
     }
 
-    pub fn start(&self, config: &JoshConfig) -> anyhow::Result<RunningJoshProxy> {
+    pub fn start(
+        &self,
+        config: &JoshConfig,
+        require_auth: bool,
+    ) -> anyhow::Result<RunningJoshProxy> {
         // Determine cache directory.
         let user_dirs =
             directories::ProjectDirs::from("org", &config.full_repo_name(), "vivoblueos-josh")
@@ -27,7 +31,8 @@ impl JoshProxy {
         let local_dir = user_dirs.cache_dir().to_owned();
 
         // Start josh, silencing its output.
-        let josh = std::process::Command::new(&self.path)
+        let mut command = std::process::Command::new(&self.path);
+        command
             .arg("--local")
             .arg(local_dir)
             .args([
@@ -36,7 +41,11 @@ impl JoshProxy {
                 "--no-background",
             ])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+        if require_auth {
+            command.arg("--require-auth");
+        }
+        let josh = command
             .spawn()
             .context("failed to start josh-proxy, make sure it is installed")?;
 
