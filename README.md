@@ -116,11 +116,14 @@ jobs:
       josh-sync-revision: <josh-sync-commit>
       pr-base-branch: main     # optional
       branch-name: blueos-pull # optional
+      pr-label: josh-sync      # optional; this is the default
     secrets:
       github-app-secret: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
-You will need to have a GitHub app configured on the repository with permissions to create pull requests in order to use the workflow.
+You will need to have a GitHub App configured on the repository with write permissions for
+contents and pull requests. Synchronization PRs are labeled `josh-sync` by default; use
+the optional `pr-label` input to choose another label.
 
 ## Automating pushes on CI
 
@@ -148,12 +151,14 @@ jobs:
       github-app-client-id: ${{ vars.APP_CLIENT_ID }}
       josh-sync-repository: vivoblueos-lab/josh-sync
       josh-sync-revision: <josh-sync-commit>
+      pr-label: josh-sync # optional; this is the default
     secrets:
       github-app-secret: ${{ secrets.APP_PRIVATE_KEY }}
 ```
 
 The GitHub App must be installed on the configured monorepo with repository contents and pull
-request write permissions. The default sync branch is
+request write permissions. The generated PR is labeled `josh-sync` by default. The
+default sync branch is
 `github.com/<subrepo-owner>/<subrepo>/josh-sync`. Only this workflow may update that branch.
 
 The generated monorepo pull request must be merged with a merge commit. Do not amend, squash, or

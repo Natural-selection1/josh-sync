@@ -29,6 +29,11 @@ on:
         required: false
         default: main
         type: string
+      pr-label:
+        description: 'Label applied to synchronization pull requests'
+        required: false
+        default: josh-sync
+        type: string
       environment:
         description: 'GitHub Actions environment that will be used to access secrets'
         required: false
@@ -54,6 +59,8 @@ jobs:
         with:
           app-id: ${{ inputs.github-app-id }}
           private-key: ${{ secrets.github-app-secret }}
+          permission-contents: write
+          permission-pull-requests: write
 
       - uses: actions/checkout@v4
         with:
@@ -122,16 +129,28 @@ jobs:
         if: ${{ steps.josh-sync.outputs.pull_result == 'pull-finished' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_LABEL: ${{ inputs.pr-label }}
         run: |
+          gh label create "$PR_LABEL" \
+            --color '1D76DB' \
+            --description 'Pull request managed by josh-sync' \
+            --force
+
           # Check if an open pull request already exists
           RESULT=`gh pr list --author ${{ inputs.pr-author }} --state open -q 'map(select(.title=="BlueOS pull update")) | length' --json title`
           if [[ "$RESULT" -eq 0 ]]; then
             echo "Creating new pull request"
-            PR_URL=`gh pr create -B ${{ inputs.pr-base-branch }} --title 'BlueOS pull update' --body 'Latest update from the BlueOS monorepo.'`
+            PR_URL=`gh pr create -B ${{ inputs.pr-base-branch }} --title 'BlueOS pull update' --body 'Latest update from the BlueOS monorepo.' --label "$PR_LABEL"`
             echo "Created pull request ${PR_URL}"
             echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           else
             PR_URL=`gh pr list --author ${{ inputs.pr-author }} --state open -q 'map(select(.title=="BlueOS pull update")) | .[0].url' --json url,title`
+            PR_NUMBER="${PR_URL##*/}"
+            jq -n --arg label "$PR_LABEL" '{labels: [$label]}' | \
+              gh api \
+                --method POST \
+                "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" \
+                --input - >/dev/null
             echo "Updating pull request ${PR_URL}"
             echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
           fi
