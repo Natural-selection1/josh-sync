@@ -61,6 +61,7 @@ jobs:
           private-key: ${{ secrets.github-app-secret }}
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
 
       - uses: actions/checkout@v4
         with:
