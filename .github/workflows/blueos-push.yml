@@ -157,12 +157,14 @@ jobs:
         shell: bash {0}
         env:
           BRANCH: ${{ steps.config.outputs.branch }}
+          GIT_TERMINAL_PROMPT: 0
           UPSTREAM_OWNER: ${{ steps.config.outputs.upstream-owner }}
         run: |
           vivoblueos-josh-sync push \
             "$BRANCH" \
             "$UPSTREAM_OWNER" \
-            --update-existing
+            --update-existing \
+            --no-interact
           exitcode=$?
 
           if [ "$exitcode" -eq 0 ]; then

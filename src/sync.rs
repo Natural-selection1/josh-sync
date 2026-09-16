@@ -295,6 +295,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
         username: &str,
         branch: &str,
         update_existing: bool,
+        no_interact: bool,
     ) -> Result<(), BlueosPushError> {
         ensure_clean_git_state(self.verbose)?;
 
@@ -347,7 +348,7 @@ After you fix the conflicts, `git add` the changes and run `git merge --continue
             .context("failed to resolve the current upstream subtree")?;
         ensure_push_needed(&local_head, &upstream_head, &current_dir, self.verbose)?;
 
-        let blueos_git = prepare_blueos_checkout(upstream_repo, self.verbose)
+        let blueos_git = prepare_blueos_checkout(upstream_repo, no_interact, self.verbose)
             .context("cannot prepare BlueOS monorepo checkout")?;
 
         // Prepare the branch. Pushing works much better if we use as base exactly
@@ -587,7 +588,11 @@ fn get_josh_filter(verbose: bool) -> anyhow::Result<JoshFilter> {
 }
 
 /// Find a BlueOS monorepo we can do our push preparation in.
-fn prepare_blueos_checkout(upstream_repo: &str, verbose: bool) -> anyhow::Result<PathBuf> {
+fn prepare_blueos_checkout(
+    upstream_repo: &str,
+    no_interact: bool,
+    verbose: bool,
+) -> anyhow::Result<PathBuf> {
     if let Ok(blueos_git) = std::env::var("BLUEOS_GIT") {
         let blueos_git = PathBuf::from(blueos_git);
         assert!(
@@ -604,8 +609,9 @@ fn prepare_blueos_checkout(upstream_repo: &str, verbose: bool) -> anyhow::Result
             &format!(
                 "Path to a BlueOS monorepo checkout is not configured via the BLUEOS_GIT environment variable, and {path} directory was not found. Do you want to download a BlueOS checkout into {path}?",
             ),
-            // Download git history if we are on CI
+            // Automatically clone when interaction is disabled or on CI.
             true,
+            no_interact,
         ) {
             println!(
                 "Cloning the BlueOS monorepo into `{path}`. Use the BLUEOS_GIT environment variable to override the location of the checkout"

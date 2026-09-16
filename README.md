@@ -159,6 +159,11 @@ request write permissions. The default sync branch is
 The generated monorepo pull request must be merged with a merge commit. Do not amend, squash, or
 rebase commits produced by the sync tool.
 
+The reusable workflows invoke the synchronizer with `--no-interact`. This flag suppresses
+josh-sync confirmation prompts and uses each prompt's safe default: a missing local monorepo
+checkout is cloned, while the optional local `gh` pull-request prompt is declined. The push step
+also disables Git credential prompts so missing credentials fail immediately instead of blocking CI.
+
 See [test.md](test.md) for the Natural-selection1 trial sequence and the production migration boundary.
 
 ## Git peculiarities

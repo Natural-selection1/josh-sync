@@ -107,10 +107,9 @@ pub fn get_current_head_sha(verbose: bool) -> anyhow::Result<String> {
 }
 
 /// Ask a prompt to user and return true if they responded with `y`.
-/// Returns `default_response` on CI.
-pub fn prompt(prompt: &str, default_response: bool) -> bool {
-    // Do not run interactive prompts on CI
-    if is_inside_ci() {
+/// Returns `default_response` when interaction is disabled or on CI.
+pub fn prompt(prompt: &str, default_response: bool, no_interact: bool) -> bool {
+    if no_interact || is_inside_ci() {
         return default_response;
     }
 
@@ -119,7 +118,11 @@ pub fn prompt(prompt: &str, default_response: bool) -> bool {
 }
 
 pub fn is_inside_ci() -> bool {
-    std::env::var("GITHUB_ACTIONS").as_deref() == Ok("1")
+    is_github_actions(std::env::var("GITHUB_ACTIONS").ok().as_deref())
+}
+
+fn is_github_actions(value: Option<&str>) -> bool {
+    matches!(value, Some("true" | "1"))
 }
 
 pub fn read_line() -> String {
@@ -133,4 +136,23 @@ pub fn read_line() -> String {
 pub fn is_null_sha(s: &str) -> bool {
     let s = s.trim();
     !s.is_empty() && s.chars().all(|c| c == '0')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_github_actions;
+
+    #[test]
+    fn recognizes_github_actions_environment() {
+        assert!(is_github_actions(Some("true")));
+        assert!(is_github_actions(Some("1")));
+        assert!(!is_github_actions(Some("false")));
+        assert!(!is_github_actions(None));
+    }
+
+    #[test]
+    fn non_interactive_prompts_use_their_default() {
+        assert!(super::prompt("must not be displayed", true, true));
+        assert!(!super::prompt("must not be displayed", false, true));
+    }
 }

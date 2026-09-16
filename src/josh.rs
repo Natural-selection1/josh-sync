@@ -130,10 +130,14 @@ fn try_install_josh_program(program: JoshProgram, verbose: bool) -> Option<PathB
         JoshProgram::Proxy => ("josh-proxy", "josh-proxy"),
         JoshProgram::Filter => ("josh-cli", "josh-filter"),
     };
-    let path = install_dir.join("bin").join(binary);
+    let local_path = install_dir.join("bin").join(binary);
     println!(
         "Updating/installing {binary} binary into `{}`...",
-        path.display()
+        if is_inside_ci() {
+            "the global Cargo binary directory"
+        } else {
+            local_path.to_str()?
+        }
     );
 
     let mut args = vec![
@@ -161,7 +165,13 @@ fn try_install_josh_program(program: JoshProgram, verbose: bool) -> Option<PathB
         verbose,
     )
     .unwrap_or_else(|e| panic!("cannot install {binary}: {e:?}"));
-    if path.is_file() { Some(path) } else { None }
+    if is_inside_ci() {
+        which::which(binary).ok()
+    } else if local_path.is_file() {
+        Some(local_path)
+    } else {
+        None
+    }
 }
 
 /// Create a wrapper that represents a running instance of `josh-proxy` and stops it on drop.

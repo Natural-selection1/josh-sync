@@ -88,6 +88,10 @@ struct SharedArgs {
     /// Print executed commands.
     #[clap(long, short = 'v', env = "JOSH_SYNC_VERBOSE")]
     verbose: bool,
+
+    /// Do not show confirmation prompts; use their safe defaults.
+    #[clap(long)]
+    no_interact: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -139,6 +143,7 @@ fn main() -> anyhow::Result<()> {
                         &ctx.config.full_repo_name(),
                         "BlueOS pull update",
                         &result.merge_commit_message,
+                        shared.no_interact,
                     )? {
                         println!(
                             "Now push the current branch to {} (either a fork or the main repo) and create a PR",
@@ -170,7 +175,7 @@ fn main() -> anyhow::Result<()> {
             let ctx = load_context(&shared.config_path, &shared.blueos_version_path)?;
             let josh = get_josh_proxy(shared.josh_proxy, shared.verbose)?;
             let sync = GitSync::new(ctx.clone(), josh, shared.verbose);
-            match sync.blueos_push(&username, &branch, update_existing) {
+            match sync.blueos_push(&username, &branch, update_existing, shared.no_interact) {
                 Ok(()) => {}
                 Err(BlueosPushError::NothingToPush) => {
                     eprintln!("Nothing to push");
@@ -228,11 +233,17 @@ fn load_context(config_path: &Path, blueos_version_path: &Path) -> anyhow::Resul
     })
 }
 
-fn maybe_create_gh_pr(repo: &str, title: &str, description: &str) -> anyhow::Result<bool> {
+fn maybe_create_gh_pr(
+    repo: &str,
+    title: &str,
+    description: &str,
+    no_interact: bool,
+) -> anyhow::Result<bool> {
     if which::which("gh").is_ok()
         && prompt(
             &format!("Do you want to create a {repo} pull PR using the `gh` tool?"),
             false,
+            no_interact,
         )
     {
         std::process::Command::new("gh")
@@ -264,5 +275,28 @@ fn get_josh_proxy(proxy_path: Option<PathBuf>, verbose: bool) -> anyhow::Result<
             Some(proxy) => Ok(proxy),
             None => Err(anyhow::anyhow!("Could not install josh-proxy")),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Args, Command};
+    use clap::Parser;
+
+    #[test]
+    fn push_accepts_no_interact() {
+        let args = Args::try_parse_from([
+            "vivoblueos-josh-sync",
+            "push",
+            "sync-branch",
+            "example-owner",
+            "--no-interact",
+        ])
+        .unwrap();
+
+        let Command::Push { shared, .. } = args.cmd else {
+            panic!("expected push command");
+        };
+        assert!(shared.no_interact);
     }
 }
