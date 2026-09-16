@@ -64,9 +64,22 @@ jobs:
       - name: Install stable Rust toolchain
         run: rustup update stable
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore Josh tool cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
-          cache-directories: "/home/runner/.cache/vivoblueos-josh"
+          path: |
+            ~/.cargo/bin/vivoblueos-josh-sync
+            ~/.cargo/bin/josh-proxy
+            ~/.cargo/bin/josh-filter
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/git
+            ~/.cargo/registry
+            /home/runner/.cache/vivoblueos-josh
+          key: blueos-josh-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.josh-sync-revision }}-pull
+          restore-keys: |
+            blueos-josh-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.josh-sync-revision }}-
+            blueos-josh-v1-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Setup bot git name and email
         run: |
