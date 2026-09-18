@@ -69,6 +69,15 @@ jobs:
           # Keep the App credential in origin so a bot push triggers PR CI.
           token: ${{ steps.app-token.outputs.token }}
 
+      - name: Check out workflow scripts
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.josh-sync-repository }}
+          ref: ${{ inputs.josh-sync-revision }}
+          path: .github/josh-sync-scripts
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Install stable Rust toolchain
         run: rustup update stable
 
@@ -130,28 +139,7 @@ jobs:
         if: ${{ steps.josh-sync.outputs.pull_result == 'pull-finished' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_AUTHOR: ${{ inputs.pr-author }}
+          PR_BASE_BRANCH: ${{ inputs.pr-base-branch }}
           PR_LABEL: ${{ inputs.pr-label }}
-        run: |
-          gh label create "$PR_LABEL" \
-            --color '1D76DB' \
-            --description 'Pull request managed by josh-sync' \
-            --force
-
-          # Check if an open pull request already exists
-          RESULT=`gh pr list --author ${{ inputs.pr-author }} --state open -q 'map(select(.title=="BlueOS pull update")) | length' --json title`
-          if [[ "$RESULT" -eq 0 ]]; then
-            echo "Creating new pull request"
-            PR_URL=`gh pr create -B ${{ inputs.pr-base-branch }} --title 'BlueOS pull update' --body 'Latest update from the BlueOS monorepo.' --label "$PR_LABEL"`
-            echo "Created pull request ${PR_URL}"
-            echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
-          else
-            PR_URL=`gh pr list --author ${{ inputs.pr-author }} --state open -q 'map(select(.title=="BlueOS pull update")) | .[0].url' --json url,title`
-            PR_NUMBER="${PR_URL##*/}"
-            jq -n --arg label "$PR_LABEL" '{labels: [$label]}' | \
-              gh api \
-                --method POST \
-                "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" \
-                --input - >/dev/null
-            echo "Updating pull request ${PR_URL}"
-            echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
-          fi
+        run: bash "$GITHUB_WORKSPACE/.github/josh-sync-scripts/scripts/blueos-pull-create-pr.sh"

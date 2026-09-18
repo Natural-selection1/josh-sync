@@ -77,70 +77,23 @@ jobs:
           cargo +stable install --locked \
             --git "https://github.com/${{ inputs.josh-sync-repository }}" \
             --rev "${{ inputs.josh-sync-revision }}"
+
+      - name: Check out workflow scripts
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.josh-sync-repository }}
+          ref: ${{ inputs.josh-sync-revision }}
+          path: .github/josh-sync-scripts
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Read synchronization config
         id: config
         env:
           JOSH_SYNC_REPOSITORY: ${{ inputs.josh-sync-repository }}
           JOSH_SYNC_REVISION: ${{ inputs.josh-sync-revision }}
           REQUESTED_BRANCH: ${{ inputs.branch-name }}
-        run: |
-          python3 - <<'PY'
-          import os
-          import re
-          import subprocess
-          import tomllib
-
-          github_name = re.compile(r"[A-Za-z0-9_.-]+")
-
-          def github_repository(value, label):
-              if not isinstance(value, str):
-                  raise SystemExit(f"{label} must be a string")
-              parts = value.split("/")
-              if len(parts) != 2 or not all(github_name.fullmatch(part) for part in parts):
-                  raise SystemExit(f"invalid {label}: {value!r}")
-              return parts
-
-          def git_branch(value, label):
-              if not isinstance(value, str) or not value:
-                  raise SystemExit(f"{label} must not be empty")
-              result = subprocess.run(
-                  ["git", "check-ref-format", "--branch", value],
-                  check=False,
-                  capture_output=True,
-                  text=True,
-              )
-              if result.returncode != 0:
-                  raise SystemExit(f"invalid {label}: {value!r}")
-
-          with open("josh-sync.toml", "rb") as config_file:
-              config = tomllib.load(config_file)
-
-          upstream = config.get("upstream-repo", "")
-          parts = github_repository(upstream, "upstream-repo")
-          upstream_branch = config.get("upstream-branch", "")
-          git_branch(upstream_branch, "upstream-branch")
-          subrepo = config.get("repo", "")
-          if not isinstance(subrepo, str) or not github_name.fullmatch(subrepo):
-              raise SystemExit(f"invalid repo: {subrepo!r}")
-
-          github_repository(os.environ["JOSH_SYNC_REPOSITORY"], "josh-sync-repository")
-          revision = os.environ["JOSH_SYNC_REVISION"]
-          if not re.fullmatch(r"[0-9a-f]{40}", revision):
-              raise SystemExit("josh-sync-revision must be a full lowercase commit SHA")
-
-          branch = os.environ["REQUESTED_BRANCH"]
-          if not branch:
-              branch = f"github.com/{os.environ['GITHUB_REPOSITORY']}/josh-sync"
-          git_branch(branch, "branch-name")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"upstream={upstream}\n")
-              output.write(f"upstream-owner={parts[0]}\n")
-              output.write(f"upstream-repository={parts[1]}\n")
-              output.write(f"upstream-branch={upstream_branch}\n")
-              output.write(f"subrepo={subrepo}\n")
-              output.write(f"branch={branch}\n")
-          PY
+        run: python3 "$GITHUB_WORKSPACE/.github/josh-sync-scripts/scripts/blueos-push-read-config.py"
       - name: Create monorepo GitHub App token
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
@@ -154,21 +107,7 @@ jobs:
       - name: Configure Git credentials
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          CREDENTIALS_FILE="$RUNNER_TEMP/josh-sync-credentials"
-          git config --global credential.helper "store --file=$CREDENTIALS_FILE"
-          printf '%s\n' \
-            'protocol=https' \
-            'host=github.com' \
-            'username=x-access-token' \
-            "password=$APP_TOKEN" \
-            '' | git credential approve
-          printf '%s\n' \
-            'protocol=http' \
-            'host=localhost:42042' \
-            'username=x-access-token' \
-            "password=$APP_TOKEN" \
-            '' | git credential approve
+        run: bash "$GITHUB_WORKSPACE/.github/josh-sync-scripts/scripts/blueos-push-configure-credentials.sh"
       - name: Set bot Git identity
         run: |
           git config --global user.name 'The vivoblueos-josh-sync Cronjob Bot'
@@ -209,72 +148,7 @@ jobs:
           UPSTREAM: ${{ steps.config.outputs.upstream }}
           UPSTREAM_BRANCH: ${{ steps.config.outputs.upstream-branch }}
           UPSTREAM_OWNER: ${{ steps.config.outputs.upstream-owner }}
-        run: |
-          SOURCE_SHA="$(git rev-parse HEAD)"
-          TITLE="$SUBREPO subtree update"
-          BODY_FILE="$RUNNER_TEMP/blueos-push-pr-body.md"
-          cat > "$BODY_FILE" <<EOF
-          Subtree update of \`$SUBREPO\` to https://github.com/$GITHUB_REPOSITORY/commit/$SOURCE_SHA.
-
-          Created using vivoblueos-josh-sync.
-
-          Do NOT amend/squash/rebase any of the commits produced by this tool; that can badly break future syncs.
-          EOF
-
-          PULL_REQUESTS_FILE="$RUNNER_TEMP/blueos-push-prs.json"
-          gh api \
-            --method GET \
-            "repos/$UPSTREAM/pulls" \
-            -f state=open \
-            -f base="$UPSTREAM_BRANCH" \
-            -f head="$UPSTREAM_OWNER:$BRANCH" \
-            > "$PULL_REQUESTS_FILE"
-          mapfile -t pull_requests < <(
-            jq -r '.[] | "\(.number)\t\(.html_url)"' "$PULL_REQUESTS_FILE"
-          )
-
-          if [ "${#pull_requests[@]}" -eq 0 ]; then
-            PR_URL="$(jq -n \
-              --arg title "$TITLE" \
-              --arg head "$BRANCH" \
-              --arg base "$UPSTREAM_BRANCH" \
-              --rawfile body "$BODY_FILE" \
-              '{title: $title, head: $head, base: $base, body: $body}' | \
-              gh api \
-                --method POST \
-                "repos/$UPSTREAM/pulls" \
-                --input - \
-                --jq '.html_url')"
-            PR_NUMBER="${PR_URL##*/}"
-            echo "Created pull request $PR_URL"
-          elif [ "${#pull_requests[@]}" -eq 1 ]; then
-            IFS=$'\t' read -r PR_NUMBER PR_URL <<< "${pull_requests[0]}"
-            jq -n \
-              --arg title "$TITLE" \
-              --rawfile body "$BODY_FILE" \
-              '{title: $title, body: $body}' | \
-              gh api \
-                --method PATCH \
-                "repos/$UPSTREAM/pulls/$PR_NUMBER" \
-                --input - >/dev/null
-            echo "Updated pull request $PR_URL"
-          else
-            echo "Found multiple open pull requests for $UPSTREAM_OWNER:$BRANCH -> $UPSTREAM_BRANCH" >&2
-            exit 1
-          fi
-
-          gh label create "$PR_LABEL" \
-            --repo "$UPSTREAM" \
-            --color '1D76DB' \
-            --description 'Pull request managed by josh-sync' \
-            --force
-          jq -n --arg label "$PR_LABEL" '{labels: [$label]}' | \
-            gh api \
-              --method POST \
-              "repos/$UPSTREAM/issues/$PR_NUMBER/labels" \
-              --input - >/dev/null
-
-          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+        run: bash "$GITHUB_WORKSPACE/.github/josh-sync-scripts/scripts/blueos-push-update-pr.sh"
       - name: Remove temporary credentials
         if: ${{ always() }}
         run: |

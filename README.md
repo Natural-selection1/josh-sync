@@ -89,8 +89,8 @@ This repository contains a reusable workflow for performing the `pull` operation
 3) Either creates a new PR (if it did not exist) with the resulting pull branch or force-pushes to an existing PR on the subtree repository
 
 Use [`blueos-pull.example.yml`](blueos-pull.example.yml) as the starting point for a subtree
-repository. The example pins the reusable workflow and the installed binary to the same immutable
-commit; keep those two SHA values in sync when updating the revision.
+repository. The example pins the reusable workflow, its scripts, and the installed binary to the
+same immutable commit; keep those SHA values in sync when updating the revision.
 
 You will need to have a GitHub App configured on the repository with write permissions for
 contents and pull requests. Synchronization PRs are labeled `josh-sync` by default; use
@@ -104,8 +104,8 @@ the existing pull request for that exact head and base branch. If the full filte
 match, including `blueos-version`, the workflow succeeds without changing the branch or PR.
 
 Use [`blueos-push.example.yml`](blueos-push.example.yml) as the starting point for a subtree
-repository. The example pins the reusable workflow and the installed binary to the same immutable
-commit; keep those two SHA values in sync when updating the revision.
+repository. The example pins the reusable workflow, its scripts, and the installed binary to the
+same immutable commit; keep those SHA values in sync when updating the revision.
 
 The GitHub App must be installed on the configured monorepo with repository contents and pull
 request write permissions. The generated PR is labeled `josh-sync` by default. The
