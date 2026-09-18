@@ -1,10 +1,10 @@
-name: 'BlueOS Subtree Sync'
+name: 'BlueOS Subtree Pull'
 
 on:
   workflow_call:
     inputs:
-      github-app-id:
-        description: 'ID of a GitHub app that will create the sync PR'
+      github-app-client-id:
+        description: 'Client ID of the GitHub App that creates the sync PR.'
         required: true
         type: string
       pr-author:
@@ -54,16 +54,16 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/create-github-app-token@v3
+      - uses: actions/create-github-app-token@v3.2.0
         id: app-token
         with:
-          app-id: ${{ inputs.github-app-id }}
+          client-id: ${{ inputs.github-app-client-id }}
           private-key: ${{ secrets.github-app-secret }}
           permission-contents: write
           permission-pull-requests: write
           permission-workflows: write
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: '0'
           # Keep the App credential in origin so a bot push triggers PR CI.
@@ -73,7 +73,7 @@ jobs:
         run: rustup update stable
 
       - name: Restore Josh tool cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/bin/vivoblueos-josh-sync

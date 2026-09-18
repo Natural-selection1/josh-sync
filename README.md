@@ -88,38 +88,9 @@ This repository contains a reusable workflow for performing the `pull` operation
 2) Performs a `pull` operation
 3) Either creates a new PR (if it did not exist) with the resulting pull branch or force-pushes to an existing PR on the subtree repository
 
-Here is an example of how you can use the workflow in a subtree repository:
-
-```yaml
-name: blueos-pull
-
-on:
-  workflow_dispatch:
-  schedule:
-    # Run at 04:00 UTC every Monday and Thursday
-    - cron: '0 4 * * 1,4'
-
-env:
-  # Optional to print detailed command logs
-  JOSH_SYNC_VERBOSE: true
-
-jobs:
-  pull:
-    # During the trial, use Natural-selection1/josh-sync and the same immutable SHA below.
-    # Production uses vivoblueos/josh-sync at a reviewed release SHA.
-    uses: Natural-selection1/josh-sync/.github/workflows/blueos-pull.yml@<josh-sync-commit>
-    with:
-      github-app-id: ${{ vars.APP_CLIENT_ID }}
-      # Must end with [bot]
-      pr-author: "github-actions[bot]"
-      josh-sync-repository: Natural-selection1/josh-sync
-      josh-sync-revision: <josh-sync-commit>
-      pr-base-branch: main     # optional
-      branch-name: blueos-pull # optional
-      pr-label: josh-sync      # optional; this is the default
-    secrets:
-      github-app-secret: ${{ secrets.APP_PRIVATE_KEY }}
-```
+Use [`blueos-pull.example.yml`](blueos-pull.example.yml) as the starting point for a subtree
+repository. The example pins the reusable workflow and the installed binary to the same immutable
+commit; keep those two SHA values in sync when updating the revision.
 
 You will need to have a GitHub App configured on the repository with write permissions for
 contents and pull requests. Synchronization PRs are labeled `josh-sync` by default; use
@@ -132,29 +103,9 @@ CI-owned branch in the configured BlueOS monorepo. It creates a monorepo pull re
 the existing pull request for that exact head and base branch. If the full filtered trees already
 match, including `blueos-version`, the workflow succeeds without changing the branch or PR.
 
-```yaml
-name: blueos-push
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-concurrency:
-  group: blueos-push-${{ github.repository }}
-  cancel-in-progress: false
-
-jobs:
-  push:
-    uses: vivoblueos-lab/josh-sync/.github/workflows/blueos-push.yml@<josh-sync-commit>
-    with:
-      github-app-client-id: ${{ vars.APP_CLIENT_ID }}
-      josh-sync-repository: vivoblueos-lab/josh-sync
-      josh-sync-revision: <josh-sync-commit>
-      pr-label: josh-sync # optional; this is the default
-    secrets:
-      github-app-secret: ${{ secrets.APP_PRIVATE_KEY }}
-```
+Use [`blueos-push.example.yml`](blueos-push.example.yml) as the starting point for a subtree
+repository. The example pins the reusable workflow and the installed binary to the same immutable
+commit; keep those two SHA values in sync when updating the revision.
 
 The GitHub App must be installed on the configured monorepo with repository contents and pull
 request write permissions. The generated PR is labeled `josh-sync` by default. The
